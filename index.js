@@ -83,5 +83,13 @@ app.get('/api/visa-info/:country', async (req, res) => {
   }
 });
 
-// Export the app for Vercel serverless functions
+// Determine if the app is running on localhost
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running locally on port ${PORT}`);
+  });
+}
+
+// Export the app for Vercel
 module.exports = app;
