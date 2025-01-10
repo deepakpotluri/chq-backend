@@ -1,4 +1,4 @@
-// index.js
+// Required modules
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -7,27 +7,28 @@ const dotenv = require('dotenv');
 // Load environment variables from .env
 dotenv.config();
 
+// Initialize Express app
 const app = express();
 
-// CORS configuration for both local and production
-app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true);
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5173', // For Vite
-      'https://visainformation.vercel.app/',
-      '*'
-    ];
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }
-}));
-
+// Middleware for parsing JSON
 app.use(express.json());
+
+// CORS configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173', // For Vite
+  'https://visainformation.vercel.app',
+  '*',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+}));
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -39,7 +40,7 @@ mongoose.connect(MONGODB_URI, {
 .then(() => console.log('MongoDB Connected'))
 .catch(err => console.error('MongoDB Connection Error:', err));
 
-// Schema
+// Define schema and model
 const visaSchema = new mongoose.Schema({
   'Country Name': String,
   'Visa Free Destinations': String,
@@ -52,6 +53,11 @@ const visaSchema = new mongoose.Schema({
 const VisaInfo = mongoose.model('countries', visaSchema);
 
 // Routes
+
+/**
+ * GET /api/countries
+ * Fetches a distinct list of country names.
+ */
 app.get('/api/countries', async (req, res) => {
   try {
     const countries = await VisaInfo.distinct('Country Name');
@@ -62,9 +68,15 @@ app.get('/api/countries', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/visa-info/:country
+ * Fetches visa information for a specific country.
+ */
 app.get('/api/visa-info/:country', async (req, res) => {
   try {
-    const visaRecords = await VisaInfo.find({ 'Country Name': req.params.country });
+    const country = req.params.country;
+    const visaRecords = await VisaInfo.find({ 'Country Name': country });
+
     if (!visaRecords || visaRecords.length === 0) {
       return res.status(404).json({ message: 'Country not found' });
     }
@@ -90,8 +102,9 @@ app.get('/api/visa-info/:country', async (req, res) => {
         transformedData.visaRequired.push(record['Visa Required']);
     });
 
+    // Remove empty strings from arrays
     Object.keys(transformedData).forEach(key => {
-      transformedData[key] = transformedData[key].filter(item => item !== '');
+      transformedData[key] = transformedData[key].filter(item => item.trim() !== '');
     });
 
     res.json(transformedData);
@@ -101,9 +114,17 @@ app.get('/api/visa-info/:country', async (req, res) => {
   }
 });
 
-// Health check endpoint
+/**
+ * GET /api/health
+ * Health check endpoint.
+ */
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Handle invalid routes
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route not found' });
 });
 
 // Start server
