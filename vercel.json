@@ -11,9 +11,5 @@
       "src": "/api/(.*)",
       "dest": "index.js"
     }
-  ],
-  "env": {
-    "MONGODB_URI": "@mongodb_uri",
-    "FRONTEND_URL": "@frontend_url"
-  }
+  ]
 }
