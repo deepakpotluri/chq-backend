@@ -14,7 +14,7 @@ app.use(cors({
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:5173', // For Vite
-      'https://your-frontend-url.vercel.app' ,
+      'https://visainformation.vercel.app/' ,
        '*'
     ];
     
