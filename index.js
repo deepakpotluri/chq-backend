@@ -2,22 +2,23 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const dotenv = require('dotenv');
+
+// Load environment variables from .env
+dotenv.config();
 
 const app = express();
 
 // CORS configuration for both local and production
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:5173', // For Vite
-      'https://visainformation.vercel.app/' ,
-       '*'
+      'https://visainformation.vercel.app/',
+      '*'
     ];
-    
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -28,8 +29,8 @@ app.use(cors({
 
 app.use(express.json());
 
-// MongoDB connection - replace with your MongoDB URI
-const MONGODB_URI = 'your-mongodb-uri-here';
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI;
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -64,7 +65,6 @@ app.get('/api/countries', async (req, res) => {
 app.get('/api/visa-info/:country', async (req, res) => {
   try {
     const visaRecords = await VisaInfo.find({ 'Country Name': req.params.country });
-    
     if (!visaRecords || visaRecords.length === 0) {
       return res.status(404).json({ message: 'Country not found' });
     }
@@ -90,7 +90,6 @@ app.get('/api/visa-info/:country', async (req, res) => {
         transformedData.visaRequired.push(record['Visa Required']);
     });
 
-    // Filter out empty strings
     Object.keys(transformedData).forEach(key => {
       transformedData[key] = transformedData[key].filter(item => item !== '');
     });
