@@ -1,4 +1,4 @@
-// controllers/authController.js
+// controllers/authController.js - Cleaned version without console logs
 const User = require('../models/User');
 
 // @desc    Register user
@@ -6,13 +6,11 @@ const User = require('../models/User');
 // @access  Public
 exports.signup = async (req, res) => {
   try {
-    console.log('Signup request received:', req.body);
     const { name, email, password, role, institutionName, institutionType, adminCode } = req.body;
     
     // Check if user exists
     const userExists = await User.findOne({ email });
     if (userExists) {
-      console.log('Signup failed: Email already registered:', email);
       return res.status(400).json({ success: false, message: 'Email already registered' });
     }
     
@@ -20,14 +18,12 @@ exports.signup = async (req, res) => {
     if (role === 'admin') {
       const adminSecretCode = process.env.ADMIN_SECRET_CODE || 'admin123';
       if (adminCode !== adminSecretCode) {
-        console.log('Admin signup failed: Invalid admin code');
         return res.status(401).json({ success: false, message: 'Invalid admin code' });
       }
     }
     
     // Validate institution data if registering as institution
     if (role === 'institution' && (!institutionName || !institutionType)) {
-      console.log('Institution signup failed: Missing institution details');
       return res.status(400).json({ success: false, message: 'Institution name and type are required' });
     }
     
@@ -40,11 +36,8 @@ exports.signup = async (req, res) => {
       userData.institutionType = institutionType;
     }
     
-    console.log('Creating user with data:', { ...userData, password: '[HIDDEN]' });
-    
     try {
       const user = await User.create(userData);
-      console.log('User created successfully with ID:', user._id);
       
       // Generate token
       const token = user.getSignedToken();
@@ -57,11 +50,9 @@ exports.signup = async (req, res) => {
         message: 'User registered successfully'
       });
     } catch (error) {
-      console.error('Error creating user in database:', error);
       return res.status(500).json({ success: false, message: 'Database error during user creation', error: error.message });
     }
   } catch (error) {
-    console.error('Signup error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during registration',
@@ -75,7 +66,6 @@ exports.signup = async (req, res) => {
 // @access  Public
 exports.login = async (req, res) => {
   try {
-    console.log('Login request received for email:', req.body.email);
     const { email, password, role } = req.body;
     
     // Validate input
@@ -86,24 +76,20 @@ exports.login = async (req, res) => {
     // Find user
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
-      console.log('Login failed: User not found:', email);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
     
     // Verify role if specified
     if (role && user.role !== role) {
-      console.log('Login failed: Role mismatch for user:', email);
       return res.status(401).json({ success: false, message: 'Invalid credentials for this role' });
     }
     
     // Check password
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
-      console.log('Login failed: Password mismatch for user:', email);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
     
-    console.log('Login successful for user:', email);
     // Generate token
     const token = user.getSignedToken();
     
@@ -115,7 +101,6 @@ exports.login = async (req, res) => {
       message: 'Login successful'
     });
   } catch (error) {
-    console.error('Login error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during login',
@@ -149,7 +134,6 @@ exports.getMe = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get profile error:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };

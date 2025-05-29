@@ -1,28 +1,38 @@
-// config/db.js
+// config/db.js - Optimized for Vercel serverless
 const mongoose = require('mongoose');
 
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
 const connectDB = async () => {
-  try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/civilshq';
-    console.log('Connecting to MongoDB with URI:', mongoURI.replace(/\/\/.*@/, '//***:***@')); // Hide credentials in logs
-    
-    // Update mongoose connection options for newer MongoDB driver versions
-    const conn = await mongoose.connect(mongoURI);
-    
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    
-    // List all collections
-    const collections = await mongoose.connection.db.listCollections().toArray();
-    console.log('Available collections:');
-    collections.forEach(coll => {
-      console.log(`- ${coll.name}`);
-    });
-    
-    return conn;
-  } catch (error) {
-    console.error('MongoDB connection error:', error);
-    process.exit(1);
+  if (cached.conn) {
+    return cached.conn;
   }
+
+  if (!cached.promise) {
+    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/civilshq';
+    
+    cached.promise = mongoose.connect(mongoURI, {
+      bufferCommands: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+    }).then((mongoose) => {
+      return mongoose;
+    });
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+
+  return cached.conn;
 };
 
 module.exports = connectDB;

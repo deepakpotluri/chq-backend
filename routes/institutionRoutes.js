@@ -1,4 +1,4 @@
-// routes/institutionRoutes.js - Updated to properly fetch enrollments
+// routes/institutionRoutes.js - Cleaned version for Vercel
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
@@ -46,41 +46,12 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
 
-// @desc    Get institution profile
-// @route   GET /api/institution/profile
-// @access  Private
-router.get('/profile', async (req, res) => {
-  try {
-    console.log('Getting profile for user ID:', req.user.id);
-    const user = await User.findById(req.user.id);
-    
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Institution not found' });
-    }
-    
-    res.status(200).json({
-      success: true,
-      email: user.email,
-      name: user.name,
-      institutionName: user.institutionName,
-      institutionType: user.institutionType,
-      isVerified: user.isVerified,
-      createdAt: user.createdAt
-    });
-  } catch (error) {
-    console.error('Error getting institution profile:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
-
-// Instead of duplicating the controller logic, use the controller
+// Import controller functions
 const { 
   getInstitutionProfile,
   getInstitutionAnalytics,
-  getInstitutionEnrollments,
   getInstitutionReviews,
   getInstitutionEarnings,
-  createCourse,
   getInstitutionCourses,
   updateCourse,
   deleteCourse,
@@ -92,9 +63,6 @@ router.get('/profile', getInstitutionProfile);
 
 // Analytics route
 router.get('/analytics', getInstitutionAnalytics);
-
-// Enrollments route
-router.get('/enrollments', getInstitutionEnrollments);
 
 // Reviews route
 router.get('/reviews', getInstitutionReviews);
@@ -140,7 +108,7 @@ router.get('/enrollments', async (req, res) => {
                 });
               }
             } catch (err) {
-              console.error('Error fetching user details for enrollment:', err);
+              // Silently continue if user fetch fails
             }
           }
         }
@@ -160,91 +128,6 @@ router.get('/enrollments', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error getting enrollments:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
-
-// @desc    Get institution reviews
-// @route   GET /api/institution/reviews
-// @access  Private
-router.get('/reviews', async (req, res) => {
-  try {
-    const courses = await Course.find({ institution: req.user.id })
-      .populate('reviews.user', 'name')
-      .lean();
-    
-    const allReviews = [];
-    
-    courses.forEach(course => {
-      if (course.reviews && course.reviews.length > 0) {
-        course.reviews.forEach(review => {
-          allReviews.push({
-            _id: review._id,
-            course: {
-              _id: course._id,
-              title: course.title
-            },
-            user: review.user,
-            courseRating: review.courseRating,
-            instituteRating: review.instituteRating,
-            facultyRating: review.facultyRating,
-            reviewText: review.reviewText,
-            isVerified: review.isVerified,
-            helpfulVotes: review.helpfulVotes,
-            createdAt: review.createdAt
-          });
-        });
-      }
-    });
-    
-    // Sort by date (newest first)
-    allReviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
-    res.status(200).json({
-      success: true,
-      reviews: allReviews
-    });
-  } catch (error) {
-    console.error('Error getting reviews:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
-
-// @desc    Get institution earnings
-// @route   GET /api/institution/earnings
-// @access  Private
-router.get('/earnings', async (req, res) => {
-  try {
-    const courses = await Course.find({ institution: req.user.id });
-    
-    // Calculate total earnings
-    let totalEarnings = 0;
-    courses.forEach(course => {
-      totalEarnings += course.price * course.currentEnrollments;
-    });
-    
-    const thisMonthEarnings = Math.floor(totalEarnings * 0.2); // Mock 20% this month
-    const pendingPayouts = Math.floor(totalEarnings * 0.1); // 10% pending
-    const completedPayouts = totalEarnings - pendingPayouts;
-    
-    // Mock monthly breakdown
-    const monthlyBreakdown = [
-      { month: 'Jan', earnings: Math.floor(totalEarnings * 0.25) },
-      { month: 'Feb', earnings: Math.floor(totalEarnings * 0.35) },
-      { month: 'Mar', earnings: thisMonthEarnings }
-    ];
-    
-    res.status(200).json({
-      success: true,
-      totalEarnings,
-      thisMonthEarnings,
-      pendingPayouts,
-      completedPayouts,
-      monthlyBreakdown
-    });
-  } catch (error) {
-    console.error('Error getting earnings:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -256,7 +139,6 @@ router.post('/courses', async (req, res) => {
   // Handle multipart form data
   upload.single('syllabusFile')(req, res, async function(err) {
     if (err) {
-      console.error('File upload error:', err);
       return res.status(400).json({ 
         success: false, 
         message: err.message || 'File upload error' 
@@ -264,9 +146,6 @@ router.post('/courses', async (req, res) => {
     }
     
     try {
-      console.log('Course creation request body:', req.body);
-      console.log('Uploaded file:', req.file);
-      
       // Destructure ALL possible fields from req.body
       const requestData = req.body;
       
@@ -309,7 +188,7 @@ router.post('/courses', async (req, res) => {
         try {
           parsedCourseType = typeof courseType === 'string' ? JSON.parse(courseType) : courseType;
         } catch (e) {
-          console.log('Failed to parse courseType, using default');
+          // Use default
         }
       }
       
@@ -318,7 +197,7 @@ router.post('/courses', async (req, res) => {
         try {
           parsedLanguages = typeof courseLanguages === 'string' ? JSON.parse(courseLanguages) : courseLanguages;
         } catch (e) {
-          console.log('Failed to parse courseLanguages, using default');
+          // Use default
         }
       }
       
@@ -337,7 +216,7 @@ router.post('/courses', async (req, res) => {
         try {
           parsedFaculty = typeof faculty === 'string' ? JSON.parse(faculty) : faculty;
         } catch (e) {
-          console.log('Failed to parse faculty, using empty array');
+          // Use empty array
         }
       }
       
@@ -395,11 +274,7 @@ router.post('/courses', async (req, res) => {
         modules: []
       };
       
-      console.log('Creating course with data:', courseData);
-      
       const course = await Course.create(courseData);
-      
-      console.log('Course created successfully:', course._id);
       
       res.status(201).json({
         success: true,
@@ -408,14 +283,12 @@ router.post('/courses', async (req, res) => {
       });
       
     } catch (error) {
-      console.error('Error creating course:', error);
-      
       // Remove uploaded file if course creation fails
       if (req.file) {
         try {
           fs.unlinkSync(req.file.path);
         } catch (unlinkError) {
-          console.error('Error removing uploaded file:', unlinkError);
+          // Ignore unlink errors
         }
       }
       
@@ -428,159 +301,16 @@ router.post('/courses', async (req, res) => {
   });
 });
 
-// @desc    Get all institution courses
-// @route   GET /api/institution/courses
-// @access  Private
-router.get('/courses', async (req, res) => {
-  try {
-    console.log('Getting courses for institution:', req.user.id);
-    const courses = await Course.find({ institution: req.user.id })
-      .sort({ createdAt: -1 })
-      .lean();
-    
-    console.log(`Found ${courses.length} courses`);
-    
-    // Add earnings data for each course
-    const coursesWithEarnings = courses.map(course => ({
-      ...course,
-      earnings: course.price * course.currentEnrollments
-    }));
-    
-    res.status(200).json({
-      success: true,
-      count: courses.length,
-      data: coursesWithEarnings
-    });
-  } catch (error) {
-    console.error('Error getting institution courses:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
+// Get all institution courses
+router.get('/courses', getInstitutionCourses);
 
-// @desc    Update course
-// @route   PUT /api/institution/courses/:id
-// @access  Private
-router.put('/courses/:id', async (req, res) => {
-  try {
-    const course = await Course.findById(req.params.id);
-    
-    if (!course) {
-      return res.status(404).json({ success: false, message: 'Course not found' });
-    }
-    
-    // Check if this institution owns the course
-    if (course.institution.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized to update this course' });
-    }
-    
-    // Update fields from request body
-    Object.keys(req.body).forEach(key => {
-      if (req.body[key] !== undefined) {
-        course[key] = req.body[key];
-      }
-    });
-    
-    // Update status based on publication
-    if (req.body.isPublished !== undefined) {
-      course.status = req.body.isPublished ? 'published' : 'draft';
-    }
-    
-    await course.save();
-    
-    res.status(200).json({
-      success: true,
-      message: 'Course updated successfully',
-      data: course
-    });
-  } catch (error) {
-    console.error('Error updating course:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
+// Update course
+router.put('/courses/:id', updateCourse);
 
-// @desc    Delete a course
-// @route   DELETE /api/institution/courses/:id
-// @access  Private
-router.delete('/courses/:id', async (req, res) => {
-  try {
-    const course = await Course.findById(req.params.id);
-    
-    if (!course) {
-      return res.status(404).json({ success: false, message: 'Course not found' });
-    }
-    
-    // Check if this institution owns the course
-    if (course.institution.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized to delete this course' });
-    }
-    
-    // Delete syllabus file if exists
-    if (course.syllabusFile) {
-      try {
-        fs.unlinkSync(course.syllabusFile);
-      } catch (e) {
-        console.error('Error removing file:', e);
-      }
-    }
-    
-    await Course.findByIdAndDelete(req.params.id);
-    
-    res.status(200).json({
-      success: true,
-      message: 'Course deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting course:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
+// Delete course
+router.delete('/courses/:id', deleteCourse);
 
-// @desc    Promote a course
-// @route   POST /api/institution/courses/:id/promote
-// @access  Private
-router.post('/courses/:id/promote', async (req, res) => {
-  try {
-    const { promotionLevel } = req.body;
-    
-    if (!['none', 'basic', 'premium', 'featured'].includes(promotionLevel)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid promotion level'
-      });
-    }
-    
-    const course = await Course.findById(req.params.id);
-    
-    if (!course) {
-      return res.status(404).json({ success: false, message: 'Course not found' });
-    }
-    
-    // Check if this institution owns the course
-    if (course.institution.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized to promote this course' });
-    }
-    
-    // Update promotion level
-    course.promotionLevel = promotionLevel;
-    
-    // Set featured status for featured promotion
-    if (promotionLevel === 'featured') {
-      course.isFeatured = true;
-    } else if (promotionLevel !== 'featured') {
-      course.isFeatured = false;
-    }
-    
-    await course.save();
-    
-    res.status(200).json({
-      success: true,
-      message: `Course promoted to ${promotionLevel} level successfully`,
-      data: course
-    });
-  } catch (error) {
-    console.error('Error promoting course:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
+// Promote course
+router.post('/courses/:id/promote', promoteCourse);
 
 module.exports = router;

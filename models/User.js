@@ -1,4 +1,4 @@
-// models/User.js
+// models/User.js - Cleaned version without console logs
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -54,12 +54,10 @@ userSchema.pre('save', async function(next) {
     return next();
   }
   try {
-    console.log('Hashing password for user:', this.email);
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
     next();
   } catch (error) {
-    console.error('Error hashing password:', error);
     next(error);
   }
 });
@@ -78,7 +76,6 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
   try {
     return await bcrypt.compare(enteredPassword, this.password);
   } catch (error) {
-    console.error('Error comparing passwords:', error);
     return false;
   }
 };

@@ -1,4 +1,4 @@
-// routes/courseRoutes.js - Enhanced version with all features
+// routes/courseRoutes.js - Cleaned version without console logs
 const express = require('express');
 const router = express.Router();
 const Course = require('../models/Course');
@@ -47,7 +47,7 @@ router.get('/published', async (req, res) => {
     
     // Language filter
     if (req.query.language) {
-      query.language = { $in: [req.query.language] };
+      query.courseLanguages = { $in: [req.query.language] };
     }
     
     // Price range filters
@@ -117,9 +117,6 @@ router.get('/published', async (req, res) => {
         };
     }
     
-    console.log('Course query:', JSON.stringify(query, null, 2));
-    console.log('Sort:', sort);
-    
     // Execute query with population
     const courses = await Course.find(query)
       .skip(skip)
@@ -129,8 +126,6 @@ router.get('/published', async (req, res) => {
       .lean();
     
     const total = await Course.countDocuments(query);
-    
-    console.log(`Found ${courses.length} courses out of ${total} total`);
     
     res.status(200).json({
       success: true,
@@ -143,7 +138,6 @@ router.get('/published', async (req, res) => {
       data: courses
     });
   } catch (error) {
-    console.error('Error getting published courses:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -153,8 +147,6 @@ router.get('/published', async (req, res) => {
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
-    console.log('Fetching course with ID:', req.params.id);
-    
     const course = await Course.findById(req.params.id)
       .populate('institution', 'institutionName email')
       .populate('reviews.user', 'name');
@@ -176,19 +168,15 @@ router.get('/:id', async (req, res) => {
           return res.status(404).json({ success: false, message: 'Course not found' });
         }
       } catch (err) {
-        console.error('Token verification error:', err);
         return res.status(404).json({ success: false, message: 'Course not found' });
       }
     }
-    
-    console.log('Course found:', course.title);
     
     res.status(200).json({
       success: true,
       data: course
     });
   } catch (error) {
-    console.error('Error getting course:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -211,7 +199,6 @@ router.post('/:id/view', async (req, res) => {
       message: 'View count updated'
     });
   } catch (error) {
-    console.error('Error incrementing view count:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -275,7 +262,6 @@ router.post('/:id/reviews', protect, async (req, res) => {
       data: newReview
     });
   } catch (error) {
-    console.error('Error adding review:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -347,7 +333,6 @@ router.post('/:id/reviews/:reviewId/vote', protect, async (req, res) => {
       message: 'Vote recorded successfully'
     });
   } catch (error) {
-    console.error('Error voting on review:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -365,7 +350,6 @@ router.get('/:id/syllabus', async (req, res) => {
     
     res.download(course.syllabusFile, `${course.title}-syllabus.pdf`);
   } catch (error) {
-    console.error('Error downloading syllabus:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -396,7 +380,6 @@ router.get('/search/nearby', async (req, res) => {
       data: courses
     });
   } catch (error) {
-    console.error('Error searching nearby courses:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -408,7 +391,7 @@ router.get('/recommendations', protect, async (req, res) => {
   try {
     // Get user's shortlisted courses to understand preferences
     const shortlist = await Shortlist.findOne({ user: req.user.id })
-      .populate('courses.course', 'courseCategory tags city language');
+      .populate('courses.course', 'courseCategory tags city courseLanguages');
     
     let recommendations = [];
     
@@ -417,7 +400,7 @@ router.get('/recommendations', protect, async (req, res) => {
       const categories = [...new Set(shortlist.courses.map(c => c.course.courseCategory))];
       const tags = [...new Set(shortlist.courses.flatMap(c => c.course.tags))];
       const cities = [...new Set(shortlist.courses.map(c => c.course.city))];
-      const languages = [...new Set(shortlist.courses.flatMap(c => c.course.language))];
+      const languages = [...new Set(shortlist.courses.flatMap(c => c.course.courseLanguages))];
       
       // Find similar courses
       recommendations = await Course.find({
@@ -427,7 +410,7 @@ router.get('/recommendations', protect, async (req, res) => {
           { courseCategory: { $in: categories } },
           { tags: { $in: tags } },
           { city: { $in: cities } },
-          { language: { $in: languages } }
+          { courseLanguages: { $in: languages } }
         ]
       })
       .limit(10)
@@ -450,7 +433,6 @@ router.get('/recommendations', protect, async (req, res) => {
       data: recommendations
     });
   } catch (error) {
-    console.error('Error getting recommendations:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -475,7 +457,6 @@ router.get('/trending', async (req, res) => {
       data: trendingCourses
     });
   } catch (error) {
-    console.error('Error getting trending courses:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -504,7 +485,6 @@ router.get('/admin/stats', protect, authorize('admin'), async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error getting course stats:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -519,15 +499,12 @@ router.get('/all', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10);
     
-    console.log(`Found ${courses.length} total courses in database`);
-    
     res.status(200).json({
       success: true,
       count: courses.length,
       data: courses
     });
   } catch (error) {
-    console.error('Error getting all courses:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
