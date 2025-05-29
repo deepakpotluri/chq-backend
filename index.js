@@ -1,4 +1,4 @@
-// index.js - Fixed CORS configuration for Vercel
+// index.js - Updated for Vercel deployment
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
@@ -11,31 +11,40 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
-// Simple CORS configuration that works with Vercel
-app.use(cors({
-  origin: true, // This allows all origins in development
+// Enhanced CORS configuration for Vercel
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3001',
+      'https://chq-frontend.vercel.app', // Replace with your actual frontend URL
+      /\.vercel\.app$/,
+      /\.netlify\.app$/
+    ];
+    
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return allowed === origin;
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  optionsSuccessStatus: 200,
-  maxAge: 86400 // 24 hours
-}));
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200
+};
 
-// Add additional headers for all responses
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  
-  next();
-});
-
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -89,8 +98,7 @@ app.get('/', (req, res) => {
       aspirant: '/api/aspirant',
       institution: '/api/institution',
       admin: '/api/admin',
-      courses: '/api/courses',
-      health: '/api/health'
+      courses: '/api/courses'
     }
   });
 });
@@ -99,23 +107,13 @@ app.get('/', (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Endpoint not found',
-    path: req.path
+    message: 'Endpoint not found'
   });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   const isDevelopment = process.env.NODE_ENV !== 'production';
-  
-  // Handle CORS errors specifically
-  if (err.message && err.message.includes('CORS')) {
-    return res.status(403).json({
-      success: false,
-      message: 'CORS policy error',
-      origin: req.headers.origin
-    });
-  }
   
   res.status(err.status || 500).json({
     success: false,
