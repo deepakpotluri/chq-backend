@@ -1,4 +1,4 @@
-// controllers/authController.js - Cleaned version without console logs
+// controllers/authController.js - Complete with login tracking and institution verification
 const User = require('../models/User');
 
 // @desc    Register user
@@ -34,12 +34,24 @@ exports.signup = async (req, res) => {
     if (role === 'institution') {
       userData.institutionName = institutionName;
       userData.institutionType = institutionType;
+      userData.isVerified = false; // Institutions need admin verification
     }
     
     try {
       const user = await User.create(userData);
       
-      // Generate token
+      // For institutions, inform them about verification requirement
+      if (role === 'institution') {
+        return res.status(201).json({ 
+          success: true, 
+          message: 'Institution registered successfully. Please wait for admin verification before accessing the dashboard.',
+          requiresVerification: true,
+          role: user.role,
+          userId: user._id
+        });
+      }
+      
+      // For aspirants and admins, generate token
       const token = user.getSignedToken();
       
       res.status(201).json({ 
@@ -68,6 +80,10 @@ exports.login = async (req, res) => {
   try {
     const { email, password, role } = req.body;
     
+    // Get IP and user agent for tracking
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const userAgent = req.get('user-agent');
+    
     // Validate input
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Please provide email and password' });
@@ -90,6 +106,27 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
     
+    // Check if institution is verified
+    if (user.role === 'institution' && !user.isVerified) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Your institution account is pending verification. Please wait for admin approval.',
+        requiresVerification: true
+      });
+    }
+    
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Your account has been deactivated. Please contact support.',
+        isDeactivated: true
+      });
+    }
+    
+    // Update login info
+    await user.updateLoginInfo(ipAddress, userAgent);
+    
     // Generate token
     const token = user.getSignedToken();
     
@@ -98,6 +135,7 @@ exports.login = async (req, res) => {
       token, 
       role: user.role,
       userId: user._id,
+      isVerified: user.isVerified,
       message: 'Login successful'
     });
   } catch (error) {
@@ -130,7 +168,9 @@ exports.getMe = async (req, res) => {
         institutionName: user.institutionName,
         institutionType: user.institutionType,
         isVerified: user.isVerified,
-        createdAt: user.createdAt
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin
       }
     });
   } catch (error) {

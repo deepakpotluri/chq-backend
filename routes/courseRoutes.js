@@ -1,4 +1,4 @@
-// routes/courseRoutes.js - Cleaned version without console logs
+// routes/courseRoutes.js - Complete with Review Restrictions
 const express = require('express');
 const router = express.Router();
 const Course = require('../models/Course');
@@ -142,14 +142,17 @@ router.get('/published', async (req, res) => {
   }
 });
 
-// @desc    Get single course by ID with view increment
+// @desc    Get single course by ID - Only show approved reviews
 // @route   GET /api/courses/:id
 // @access  Public
 router.get('/:id', async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
       .populate('institution', 'institutionName email')
-      .populate('reviews.user', 'name');
+      .populate({
+        path: 'reviews.user',
+        select: 'name'
+      });
     
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
@@ -172,9 +175,13 @@ router.get('/:id', async (req, res) => {
       }
     }
     
+    // Filter reviews to only show approved ones to public
+    const courseData = course.toObject();
+    courseData.reviews = courseData.reviews.filter(review => review.verificationStatus === 'approved');
+    
     res.status(200).json({
       success: true,
-      data: course
+      data: courseData
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
@@ -203,10 +210,10 @@ router.post('/:id/view', async (req, res) => {
   }
 });
 
-// @desc    Add review to course
+// @desc    Add review to course (Only aspirants can review)
 // @route   POST /api/courses/:id/reviews
-// @access  Private
-router.post('/:id/reviews', protect, async (req, res) => {
+// @access  Private (Aspirants only)
+router.post('/:id/reviews', protect, authorize('aspirant'), async (req, res) => {
   try {
     const { courseRating, instituteRating, facultyRating, reviewText } = req.body;
     
@@ -235,7 +242,7 @@ router.post('/:id/reviews', protect, async (req, res) => {
       });
     }
     
-    // Check if user is enrolled in the course (for verification)
+    // Check if user is enrolled in the course (for verification badge)
     const isEnrolled = course.enrollments.some(
       enrollment => enrollment.user.toString() === req.user.id && 
                    enrollment.paymentStatus === 'completed'
@@ -247,7 +254,9 @@ router.post('/:id/reviews', protect, async (req, res) => {
       instituteRating: parseInt(instituteRating),
       facultyRating: parseInt(facultyRating),
       reviewText: reviewText.trim(),
-      isVerified: isEnrolled,
+      isVerified: isEnrolled, // This is enrollment verification, not admin verification
+      verificationStatus: 'pending', // All reviews start as pending
+      isVisible: false, // Not visible until approved
       helpfulVotes: 0,
       notHelpfulVotes: 0,
       votedBy: []
@@ -258,8 +267,11 @@ router.post('/:id/reviews', protect, async (req, res) => {
     
     res.status(201).json({
       success: true,
-      message: 'Review added successfully',
-      data: newReview
+      message: 'Review submitted successfully. It will be visible after admin verification.',
+      data: {
+        ...newReview,
+        verificationMessage: 'Your review has been sent for verification and will appear once approved.'
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
@@ -290,6 +302,11 @@ router.post('/:id/reviews/:reviewId/vote', protect, async (req, res) => {
     
     if (!review) {
       return res.status(404).json({ success: false, message: 'Review not found' });
+    }
+    
+    // Only allow voting on approved reviews
+    if (review.verificationStatus !== 'approved') {
+      return res.status(400).json({ success: false, message: 'Cannot vote on unverified reviews' });
     }
     
     // Check if user has already voted on this review

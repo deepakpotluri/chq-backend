@@ -1,4 +1,4 @@
-// controllers/institutionController.js - Fixed version
+// controllers/institutionController.js - Complete Institution Controller
 const User = require('../models/User');
 const Course = require('../models/Course');
 const path = require('path');
@@ -174,7 +174,7 @@ exports.getInstitutionEnrollments = async (req, res) => {
   }
 };
 
-// @desc    Get institution reviews
+// @desc    Get institution reviews with verification status
 // @route   GET /api/institution/reviews
 // @access  Private
 exports.getInstitutionReviews = async (req, res) => {
@@ -202,6 +202,8 @@ exports.getInstitutionReviews = async (req, res) => {
               facultyRating: review.facultyRating,
               reviewText: review.reviewText,
               isVerified: review.isVerified,
+              verificationStatus: review.verificationStatus,
+              rejectionReason: review.rejectionReason,
               helpfulVotes: review.helpfulVotes,
               createdAt: review.createdAt
             });
@@ -268,6 +270,15 @@ exports.getInstitutionEarnings = async (req, res) => {
 // @access  Private
 exports.createCourse = async (req, res) => {
   try {
+    // Check if institution is verified
+    const institution = await User.findById(req.user.id);
+    if (!institution.isVerified) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Your institution must be verified before creating courses' 
+      });
+    }
+
     // Handle file upload
     upload.single('syllabusFile')(req, res, async function(err) {
       if (err) {
@@ -641,9 +652,6 @@ exports.getPublishedCourses = async (req, res) => {
     const skip = (page - 1) * limit;
     
     const query = { isPublished: true };
-    
-    // Remove the status filter for now to see all published courses
-    // We'll add it back once we verify courses are showing
     
     // Add search functionality
     if (req.query.search) {

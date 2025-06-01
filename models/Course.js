@@ -1,7 +1,7 @@
-// models/Course.js - Fixed version with renamed language field
+// models/Course.js - Complete Enhanced Course Model
 const mongoose = require('mongoose');
 
-// Review Schema
+// Enhanced Review Schema with verification workflow
 const reviewSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -30,6 +30,22 @@ const reviewSchema = new mongoose.Schema({
     type: String,
     required: true,
     maxlength: 1000
+  },
+  // Verification workflow fields
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
+  },
+  verifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  verifiedAt: Date,
+  rejectionReason: String,
+  isVisible: {
+    type: Boolean,
+    default: false
   },
   isVerified: {
     type: Boolean,
@@ -271,8 +287,19 @@ const courseSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'published', 'archived', 'cancelled'],
+    enum: ['draft', 'published', 'archived', 'cancelled', 'suspended'],
     default: 'draft'
+  },
+  
+  // Admin action tracking
+  adminAction: {
+    action: String,
+    reason: String,
+    actionBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    actionAt: Date
   },
   
   // Enrollment and Capacity
@@ -376,21 +403,26 @@ courseSchema.index({
 // Geospatial index for location-based queries
 courseSchema.index({ coordinates: '2dsphere' });
 
-// Pre-save middleware
+// Pre-save middleware - Updated to only count approved reviews
 courseSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   
-  // Calculate overall average rating
-  if (this.reviews.length > 0) {
-    const totalCourse = this.reviews.reduce((sum, review) => sum + review.courseRating, 0);
-    const totalInstitute = this.reviews.reduce((sum, review) => sum + review.instituteRating, 0);
-    const totalFaculty = this.reviews.reduce((sum, review) => sum + review.facultyRating, 0);
+  // Calculate rating only from approved reviews
+  const approvedReviews = this.reviews.filter(r => r.verificationStatus === 'approved');
+  
+  if (approvedReviews.length > 0) {
+    const totalCourse = approvedReviews.reduce((sum, review) => sum + review.courseRating, 0);
+    const totalInstitute = approvedReviews.reduce((sum, review) => sum + review.instituteRating, 0);
+    const totalFaculty = approvedReviews.reduce((sum, review) => sum + review.facultyRating, 0);
     
-    this.averageRating.course = totalCourse / this.reviews.length;
-    this.averageRating.institute = totalInstitute / this.reviews.length;
-    this.averageRating.faculty = totalFaculty / this.reviews.length;
+    this.averageRating.course = totalCourse / approvedReviews.length;
+    this.averageRating.institute = totalInstitute / approvedReviews.length;
+    this.averageRating.faculty = totalFaculty / approvedReviews.length;
     this.averageRating.overall = (this.averageRating.course + this.averageRating.institute + this.averageRating.faculty) / 3;
-    this.totalReviews = this.reviews.length;
+    this.totalReviews = approvedReviews.length;
+  } else {
+    this.averageRating = { course: 0, institute: 0, faculty: 0, overall: 0 };
+    this.totalReviews = 0;
   }
   
   // Update current enrollments

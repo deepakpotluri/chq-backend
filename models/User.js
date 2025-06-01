@@ -1,4 +1,4 @@
-// models/User.js - Cleaned version without console logs
+// models/User.js - Complete Enhanced User Model
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -29,6 +29,7 @@ const userSchema = new mongoose.Schema({
     enum: ['aspirant', 'institution', 'admin'],
     default: 'aspirant' 
   },
+  
   // For institutions
   institutionName: { 
     type: String,
@@ -38,10 +39,45 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['coaching', 'university', 'college', 'other']
   },
+  
+  // Verification fields
   isVerified: { 
     type: Boolean, 
-    default: false 
+    default: function() {
+      // Aspirants are auto-verified, institutions need admin verification
+      return this.role === 'aspirant';
+    }
   },
+  verifiedAt: Date,
+  verifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  
+  // Activity tracking
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  delistReason: String,
+  statusUpdatedAt: Date,
+  statusUpdatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  
+  // Login tracking
+  lastLogin: Date,
+  loginCount: {
+    type: Number,
+    default: 0
+  },
+  loginHistory: [{
+    timestamp: Date,
+    ipAddress: String,
+    userAgent: String
+  }],
+  
   createdAt: { 
     type: Date, 
     default: Date.now 
@@ -78,6 +114,25 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
   } catch (error) {
     return false;
   }
+};
+
+// Update login info
+userSchema.methods.updateLoginInfo = async function(ipAddress = null, userAgent = null) {
+  this.lastLogin = new Date();
+  this.loginCount += 1;
+  
+  // Keep only last 10 login records
+  if (this.loginHistory.length >= 10) {
+    this.loginHistory.shift();
+  }
+  
+  this.loginHistory.push({
+    timestamp: new Date(),
+    ipAddress: ipAddress || 'Unknown',
+    userAgent: userAgent || 'Unknown'
+  });
+  
+  await this.save();
 };
 
 // This will create a "users" collection in MongoDB
