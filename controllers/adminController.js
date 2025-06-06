@@ -99,8 +99,13 @@ exports.getInstitutions = async (req, res) => {
     const skip = (page - 1) * limit;
     const { isVerified } = req.query;
     
+    // Build query to get only institution users
     const query = { role: 'institution' };
-    if (isVerified !== undefined) query.isVerified = isVerified === 'true';
+    if (isVerified !== undefined && isVerified !== '') {
+      query.isVerified = isVerified === 'true';
+    }
+    
+    console.log('Fetching institutions with query:', query); // Debug log
     
     const institutions = await User
       .find(query)
@@ -109,6 +114,8 @@ exports.getInstitutions = async (req, res) => {
       .select('-password')
       .sort({ createdAt: -1 })
       .lean();
+    
+    console.log(`Found ${institutions.length} institutions`); // Debug log
     
     // Get course count for each institution
     const institutionsWithStats = await Promise.all(
@@ -242,9 +249,13 @@ exports.getAllCourses = async (req, res) => {
     const { isPublished, status, institutionId } = req.query;
     
     const query = {};
-    if (isPublished !== undefined) query.isPublished = isPublished === 'true';
-    if (status) query.status = status;
+    if (isPublished !== undefined && isPublished !== '') {
+      query.isPublished = isPublished === 'true';
+    }
+    if (status && status !== '') query.status = status;
     if (institutionId) query.institution = institutionId;
+    
+    console.log('Fetching courses with query:', query); // Debug log
     
     const courses = await Course
       .find(query)
@@ -253,6 +264,8 @@ exports.getAllCourses = async (req, res) => {
       .limit(limit)
       .sort({ createdAt: -1 })
       .lean();
+    
+    console.log(`Found ${courses.length} courses`); // Debug log
     
     const total = await Course.countDocuments(query);
     
