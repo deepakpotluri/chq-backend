@@ -11,9 +11,29 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
+// CORS configuration - only allow your frontend domain
+const corsOptions = {
+  origin: [
+    'https://chq-frontend.vercel.app',
+    // Add localhost for development if needed
+    'http://localhost:3000',
+    'http://localhost:5173'
+  ],
+  credentials: true, // Enable if you're using cookies/sessions
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'Cache-Control'
+  ]
+};
+
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(cors(corsOptions));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MongoDB connection (ensure single connection)
