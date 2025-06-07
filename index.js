@@ -12,14 +12,29 @@ dotenv.config();
 const app = express();
 
 // CORS configuration - only allow your frontend domain
+const allowedOrigins = [
+  'https://chq-frontend.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173'
+];
+
+// Add any additional origins from environment variable
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
 const corsOptions = {
-  origin: [
-    'https://chq-frontend.vercel.app',
-    // Add localhost for development if needed
-    'http://localhost:3000',
-    'http://localhost:5173'
-  ],
-  credentials: true, // Enable if you're using cookies/sessions
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Origin',
@@ -28,9 +43,9 @@ const corsOptions = {
     'Accept',
     'Authorization',
     'Cache-Control'
-  ]
+  ],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 };
-
 // Middleware
 app.use(express.json());
 app.use(cors(corsOptions));
