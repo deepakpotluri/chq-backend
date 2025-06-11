@@ -1,4 +1,4 @@
-// routes/courseRoutes.js - Complete with Error Handling and Debug Info
+// routes/courseRoutes.js - Complete with Review Restrictions
 const express = require('express');
 const router = express.Router();
 const Course = require('../models/Course');
@@ -11,9 +11,6 @@ const jwt = require('jsonwebtoken');
 // @access  Public
 router.get('/published', async (req, res) => {
   try {
-    console.log('=== FETCHING PUBLISHED COURSES ===');
-    console.log('Query params:', req.query);
-    
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 12;
     const skip = (page - 1) * limit;
@@ -120,100 +117,28 @@ router.get('/published', async (req, res) => {
         };
     }
     
-    console.log('Final query:', JSON.stringify(query, null, 2));
-    console.log('Sort:', sort);
+    // Execute query with population
+    const courses = await Course.find(query)
+      .skip(skip)
+      .limit(limit)
+      .sort(sort)
+      .populate('institution', 'institutionName email')
+      .lean();
     
-    // Debug: Check total courses
-    const totalCourses = await Course.countDocuments({});
-    const publishedCourses = await Course.countDocuments({ isPublished: true, status: 'published' });
-    console.log(`Total courses: ${totalCourses}, Published: ${publishedCourses}`);
+    const total = await Course.countDocuments(query);
     
-    try {
-      // Execute query with population
-      const courses = await Course.find(query)
-        .skip(skip)
-        .limit(limit)
-        .sort(sort)
-        .populate({
-          path: 'institution',
-          select: 'institutionName email _id',
-          model: 'User',
-          strictPopulate: false
-        })
-        .lean();
-      
-      console.log(`Found ${courses.length} courses after population`);
-      
-      // If population failed for some courses, add dummy institution data
-      const processedCourses = courses.map(course => {
-        if (!course.institution || typeof course.institution === 'string' || course.institution instanceof require('mongoose').Types.ObjectId) {
-          return {
-            ...course,
-            institution: {
-              _id: course.institution,
-              institutionName: 'Institution',
-              email: 'info@institution.com'
-            }
-          };
-        }
-        return course;
-      });
-      
-      const total = await Course.countDocuments(query);
-      
-      res.status(200).json({
-        success: true,
-        count: processedCourses.length,
-        pagination: {
-          total,
-          page,
-          pages: Math.ceil(total / limit)
-        },
-        data: processedCourses
-      });
-    } catch (populateError) {
-      console.error('Population error:', populateError);
-      
-      // If population fails completely, return courses without population
-      const courses = await Course.find(query)
-        .skip(skip)
-        .limit(limit)
-        .sort(sort)
-        .lean();
-      
-      console.log(`Found ${courses.length} courses without population`);
-      
-      // Add dummy institution data
-      const coursesWithDummyInstitution = courses.map(course => ({
-        ...course,
-        institution: {
-          _id: course.institution,
-          institutionName: 'Institution',
-          email: 'info@institution.com'
-        }
-      }));
-      
-      const total = await Course.countDocuments(query);
-      
-      res.status(200).json({
-        success: true,
-        count: coursesWithDummyInstitution.length,
-        pagination: {
-          total,
-          page,
-          pages: Math.ceil(total / limit)
-        },
-        data: coursesWithDummyInstitution
-      });
-    }
-  } catch (error) {
-    console.error('Error in /published route:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error', 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    res.status(200).json({
+      success: true,
+      count: courses.length,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit)
+      },
+      data: courses
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
 
@@ -223,29 +148,14 @@ router.get('/published', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
-      .populate({
-        path: 'institution',
-        select: 'institutionName email _id',
-        model: 'User',
-        strictPopulate: false
-      })
+      .populate('institution', 'institutionName email')
       .populate({
         path: 'reviews.user',
-        select: 'name',
-        strictPopulate: false
+        select: 'name'
       });
     
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
-    }
-    
-    // Handle missing institution
-    if (!course.institution || typeof course.institution === 'string' || course.institution instanceof require('mongoose').Types.ObjectId) {
-      course.institution = {
-        _id: course.institution,
-        institutionName: 'Institution',
-        email: 'info@institution.com'
-      };
     }
     
     // For unpublished courses, only show to the institution that owns it
@@ -274,7 +184,6 @@ router.get('/:id', async (req, res) => {
       data: courseData
     });
   } catch (error) {
-    console.error('Error fetching course:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
@@ -603,56 +512,14 @@ router.get('/admin/stats', protect, authorize('admin'), async (req, res) => {
 router.get('/all', async (req, res) => {
   try {
     const courses = await Course.find({})
-      .populate({
-        path: 'institution',
-        select: 'institutionName email',
-        strictPopulate: false
-      })
+      .populate('institution', 'institutionName')
       .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
-    
-    // Handle missing institutions
-    const processedCourses = courses.map(course => {
-      if (!course.institution || typeof course.institution === 'string') {
-        return {
-          ...course,
-          institution: {
-            _id: course.institution,
-            institutionName: 'Institution',
-            email: 'info@institution.com'
-          }
-        };
-      }
-      return course;
-    });
+      .limit(10);
     
     res.status(200).json({
       success: true,
-      count: processedCourses.length,
-      data: processedCourses
-    });
-  } catch (error) {
-    console.error('Error in /all route:', error);
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
-  }
-});
-
-// TEMPORARY: Debug endpoint to check course status
-router.get('/debug/status', async (req, res) => {
-  try {
-    const stats = {
-      totalCourses: await Course.countDocuments({}),
-      publishedCourses: await Course.countDocuments({ isPublished: true }),
-      publishedWithStatus: await Course.countDocuments({ isPublished: true, status: 'published' }),
-      draftCourses: await Course.countDocuments({ isPublished: false }),
-      coursesWithInstitution: await Course.countDocuments({ institution: { $exists: true } }),
-      sampleCourse: await Course.findOne({ isPublished: true, status: 'published' }).lean()
-    };
-    
-    res.status(200).json({
-      success: true,
-      stats
+      count: courses.length,
+      data: courses
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
