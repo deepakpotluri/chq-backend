@@ -86,11 +86,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Export for Vercel
-module.exports = app;
-
-// Also start server if not in Vercel environment
-if (!process.env.VERCEL) {
+// Check if running in Vercel or Local
+if (process.env.VERCEL) {
+  // Vercel: Export the app as a serverless handler
+  module.exports = app;
+} else {
+  // Local: Start the server
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
