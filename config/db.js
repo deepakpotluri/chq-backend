@@ -13,11 +13,7 @@ const connectDB = async () => {
   }
 
   if (!cached.promise) {
-    const mongoURI = process.env.MONGODB_URI;
-    
-    if (!mongoURI) {
-      throw new Error('MONGODB_URI is not defined in environment variables');
-    }
+    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/civilshq';
     
     cached.promise = mongoose.connect(mongoURI, {
       bufferCommands: false,
