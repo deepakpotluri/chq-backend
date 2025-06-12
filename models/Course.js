@@ -1,4 +1,4 @@
-// models/Course.js - Complete Enhanced Course Model
+// models/Course.js - Complete Enhanced Course Model with Fixed canEnroll
 const mongoose = require('mongoose');
 
 // Enhanced Review Schema with verification workflow
@@ -466,11 +466,38 @@ courseSchema.methods.removeFromShortlist = function() {
   return this.save();
 };
 
+// FIXED: Updated canEnroll method with better logic
 courseSchema.methods.canEnroll = function() {
-  return this.isPublished && 
-         this.isAvailable && 
-         new Date() <= this.startDate &&
-         this.status === 'published';
+  // Check if course is published
+  if (!this.isPublished) {
+    console.log('Course not published');
+    return false;
+  }
+  
+  // Check if course status is published (not suspended, archived, etc.)
+  if (this.status !== 'published') {
+    console.log('Course status is not published:', this.status);
+    return false;
+  }
+  
+  // Check if course has not started yet (allow enrollment before start date)
+  const now = new Date();
+  const startDate = new Date(this.startDate);
+  const endDate = new Date(this.endDate);
+  
+  // Allow enrollment if current date is before the end date
+  if (now > endDate) {
+    console.log('Course has ended');
+    return false;
+  }
+  
+  // Check availability (seats)
+  if (!this.isAvailable) {
+    console.log('No seats available');
+    return false;
+  }
+  
+  return true;
 };
 
 // Static methods
