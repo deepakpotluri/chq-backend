@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const path = require('path');
+const databaseMiddleware = require('./middleware/database');
 
 // Load environment variables
 dotenv.config();
@@ -28,8 +29,8 @@ const corsOptions = {
 };
 
 // Middleware
-app.use(express.json());
 app.use(cors(corsOptions));
+app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Add headers middleware for additional CORS support
@@ -43,26 +44,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// MongoDB connection (ensure single connection)
-let dbConnected = false;
-(async () => {
-  if (!dbConnected) {
-    try {
-      await connectDB();
-      console.log('MongoDB connected successfully');
-      dbConnected = true;
-    } catch (err) {
-      console.error('Failed to connect to MongoDB:', err);
-    }
-  }
-})();
-
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const aspirantRoutes = require('./routes/aspirantRoutes');
 const institutionRoutes = require('./routes/institutionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const courseRoutes = require('./routes/courseRoutes'); // Added new course routes
+const courseRoutes = require('./routes/courseRoutes');
+
+// Apply database middleware to all routes
+app.use(databaseMiddleware);
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -76,6 +66,15 @@ app.get('/', (req, res) => {
   res.json({ message: 'Civils HQ API is running' });
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'API is healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
@@ -86,12 +85,13 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Check if running in Vercel or Local
-if (process.env.VERCEL) {
-  // Vercel: Export the app as a serverless handler
-  module.exports = app;
-} else {
-  // Local: Start the server
-  const PORT = process.env.PORT || 5000;
+// For Vercel deployment
+const PORT = process.env.PORT || 5000;
+
+// Start the server for local development
+if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
+
+// Export for Vercel
+module.exports = app;
