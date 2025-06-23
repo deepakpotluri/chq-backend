@@ -506,24 +506,246 @@ router.get('/admin/stats', protect, authorize('admin'), async (req, res) => {
   }
 });
 
-// @desc    Get all courses (for debugging)
-// @route   GET /api/courses/all
+// @desc    Get single course with proper review filtering
+// @route   GET /api/courses/:id
 // @access  Public
-router.get('/all', async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const courses = await Course.find({})
-      .populate('institution', 'institutionName')
-      .sort({ createdAt: -1 })
-      .limit(10);
+    const course = await Course.findById(req.params.id)
+      .populate('institution', 'institutionName email')
+      .populate({
+        path: 'reviews.user',
+        select: 'name email'
+      })
+      .populate({
+        path: 'reviews.verifiedBy',
+        select: 'name'
+      });
+    
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+    
+    // Check user authorization
+    let userRole = 'public';
+    let userId = null;
+    
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mysecretkey');
+        userRole = decoded.role;
+        userId = decoded.id;
+      } catch (err) {
+        // Invalid token, treat as public user
+      }
+    }
+    
+    // For unpublished courses, only show to the institution that owns it or admins
+    if (!course.isPublished || course.status !== 'published') {
+      if (userRole === 'admin') {
+        // Admins can see everything
+      } else if (userRole === 'institution' && userId === course.institution._id.toString()) {
+        // Institution can see their own courses
+      } else {
+        return res.status(404).json({ success: false, message: 'Course not found' });
+      }
+    }
+    
+    // Filter reviews based on user role
+    const courseData = course.toObject();
+    
+    if (userRole === 'admin') {
+      // Admins see all reviews with full details
+      courseData.reviews = courseData.reviews.map(review => ({
+        ...review,
+        canModerate: true
+      }));
+    } else if (userRole === 'institution' && userId === course.institution._id.toString()) {
+      // Institutions see all reviews for their courses
+      courseData.reviews = courseData.reviews;
+    } else {
+      // Public users and aspirants only see approved reviews
+      courseData.reviews = courseData.reviews.filter(
+        review => review.verificationStatus === 'approved' && review.isVisible
+      );
+    }
     
     res.status(200).json({
       success: true,
-      count: courses.length,
-      data: courses
+      data: courseData,
+      userPermissions: {
+        canModerateReviews: userRole === 'admin',
+        canEditCourse: userRole === 'institution' && userId === course.institution._id.toString(),
+        isOwner: userRole === 'institution' && userId === course.institution._id.toString()
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
+
+router.get('/:id/complete', protect, async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id)
+      .populate('institution', 'institutionName email')
+      .populate({
+        path: 'reviews.user',
+        select: 'name'
+      });
+    
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+    
+    // Return all reviews without filtering for logged-in users
+    res.status(200).json({
+      success: true,
+      data: course
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+});
+
+// institutionController.js - Update the createCourse and updateCourse methods to handle schedule
+
+// @desc    Create new course
+// @route   POST /api/institution/courses
+// @access  Private
+exports.createCourse = async (req, res) => {
+  try {
+    // Destructure all fields including schedule
+    const {
+      title,
+      description,
+      price,
+      originalPrice,
+      discount,
+      duration,
+      courseCategory,
+      courseType,
+      courseLanguages,
+      subjects,
+      city,
+      state,
+      address,
+      startDate,
+      endDate,
+      highlights,
+      whatYouWillLearn,
+      maxStudents,
+      schedule, // Add schedule field
+      syllabusDetails
+    } = req.body;
+    
+    // Create course object with all fields
+    const courseData = {
+      title,
+      description,
+      price,
+      originalPrice: originalPrice || price,
+      discount: discount || 0,
+      duration,
+      institution: req.user.id,
+      courseCategory,
+      courseType: Array.isArray(courseType) ? courseType : [courseType],
+      courseLanguages: Array.isArray(courseLanguages) ? courseLanguages : ['english'],
+      subjects: subjects || [],
+      city,
+      state,
+      address,
+      startDate,
+      endDate,
+      highlights: highlights || [],
+      whatYouWillLearn: whatYouWillLearn || [],
+      maxStudents: maxStudents || 0,
+      schedule: schedule || [], // Include schedule
+      syllabusDetails: syllabusDetails || [],
+      isPublished: req.user.isVerified // Auto-publish if institution is verified
+    };
+    
+    const course = await Course.create(courseData);
+    
+    res.status(201).json({
+      success: true,
+      message: 'Course created successfully',
+      data: course
+    });
+  } catch (error) {
+    console.error('Error creating course:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error during course creation', 
+      error: error.message 
+    });
+  }
+};
+
+// @desc    Update course
+// @route   PUT /api/institution/courses/:id
+// @access  Private
+exports.updateCourse = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+    
+    // Check if this institution owns the course
+    if (course.institution.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to update this course' 
+      });
+    }
+    
+    // Update fields including schedule
+    const updateFields = {
+      title: req.body.title,
+      description: req.body.description,
+      price: req.body.price,
+      originalPrice: req.body.originalPrice || req.body.price,
+      discount: req.body.discount || 0,
+      duration: req.body.duration,
+      courseCategory: req.body.courseCategory,
+      courseType: Array.isArray(req.body.courseType) ? req.body.courseType : [req.body.courseType],
+      courseLanguages: Array.isArray(req.body.courseLanguages) ? req.body.courseLanguages : ['english'],
+      subjects: req.body.subjects || [],
+      city: req.body.city,
+      state: req.body.state,
+      address: req.body.address,
+      startDate: req.body.startDate,
+      endDate: req.body.endDate,
+      highlights: req.body.highlights || [],
+      whatYouWillLearn: req.body.whatYouWillLearn || [],
+      maxStudents: req.body.maxStudents || 0,
+      schedule: req.body.schedule || [], // Include schedule in update
+      syllabusDetails: req.body.syllabusDetails || [],
+      updatedAt: Date.now()
+    };
+    
+    // Update course
+    const updatedCourse = await Course.findByIdAndUpdate(
+      req.params.id,
+      updateFields,
+      { new: true, runValidators: true }
+    );
+    
+    res.status(200).json({
+      success: true,
+      message: 'Course updated successfully',
+      data: updatedCourse
+    });
+  } catch (error) {
+    console.error('Error updating course:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error during course update', 
+      error: error.message 
+    });
+  }
+};
 
 module.exports = router;

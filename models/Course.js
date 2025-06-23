@@ -1,7 +1,7 @@
-// models/Course.js - Complete Enhanced Course Model with Fixed canEnroll
+// models/Course.js - Updated Course Model with proper schedule schema
 const mongoose = require('mongoose');
 
-// Enhanced Review Schema with verification workflow
+// Review Schema
 const reviewSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -31,7 +31,6 @@ const reviewSchema = new mongoose.Schema({
     required: true,
     maxlength: 1000
   },
-  // Verification workflow fields
   verificationStatus: {
     type: String,
     enum: ['pending', 'approved', 'rejected'],
@@ -75,7 +74,51 @@ const reviewSchema = new mongoose.Schema({
   }
 });
 
-// Enhanced Course Schema
+// Schedule Schema - Updated to match frontend calendar structure
+const scheduleSchema = new mongoose.Schema({
+  id: {
+    type: mongoose.Schema.Types.Mixed, // Can be number or string
+    required: true
+  },
+  date: {
+    type: String, // ISO date string format "YYYY-MM-DD"
+    required: true
+  },
+  title: {
+    type: String,
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['lecture', 'test', 'doubt-clearing', 'discussion', 'workshop', 'assignment'],
+    default: 'lecture'
+  },
+  startTime: {
+    type: String, // Format "HH:MM"
+    required: true
+  },
+  endTime: {
+    type: String, // Format "HH:MM"
+    required: true
+  },
+  subject: String,
+  faculty: String,
+  description: String,
+  color: {
+    type: String,
+    default: '#3B82F6'
+  },
+  isRecurring: {
+    type: Boolean,
+    default: false
+  },
+  recurringDays: {
+    type: [Number], // Array of day numbers (0-6, where 0 is Sunday)
+    default: []
+  }
+}, { _id: false }); // Disable automatic _id for subdocuments
+
+// Course Schema
 const courseSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -107,92 +150,83 @@ const courseSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Duration is required']
   },
-  startDate: {
-    type: Date,
-    required: [true, 'Start date is required']
-  },
-  endDate: {
-    type: Date,
-    required: [true, 'End date is required']
-  },
+  
+  // Institution reference
   institution: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Institution is required']
+    required: true
   },
   
-  // Enhanced Course Details
+  // Course categorization
   courseCategory: {
     type: String,
-    enum: ['prelims', 'mains', 'prelims-cum-mains', 'optionals', 'test-series', 'foundation', 'interview'],
-    required: [true, 'Course category is required']
-  },
-  subjects: [{
-    type: String,
+    enum: ['prelims', 'mains', 'interview', 'foundation', 'optional', 'prelims-cum-mains', 'optionals', 'test-series'],
     required: true
-  }],
-  // RENAMED: language -> courseLanguages to avoid MongoDB conflict
-  courseLanguages: {
-    type: [String],
-    enum: ['english', 'hindi', 'tamil', 'telugu', 'bengali', 'marathi', 'gujarati', 'kannada', 'malayalam', 'punjabi', 'urdu'],
-    default: ['english']
   },
-  faculty: [{
-    name: {
-      type: String,
-      required: true
-    },
-    qualification: String,
-    experience: String,
-    subject: String
-  }],
-  
-  // Location Details
-  city: {
-    type: String,
-    required: function() {
-      return this.courseType.includes('offline') || this.courseType.includes('hybrid');
-    }
-  },
-  state: {
-    type: String,
-    required: function() {
-      return this.courseType.includes('offline') || this.courseType.includes('hybrid');
-    }
-  },
-  address: {
-    type: String,
-    required: function() {
-      return this.courseType.includes('offline') || this.courseType.includes('hybrid');
-    }
-  },
-  coordinates: {
-    latitude: Number,
-    longitude: Number
-  },
-  
-  // Course Type and Mode
   courseType: {
     type: [String],
-    enum: {
-      values: ['online', 'offline', 'hybrid', 'weekend', 'evening'],
-      message: 'Course type must be one of: online, offline, hybrid, weekend, evening'
-    },
-    default: ['online'],
-    validate: {
-      validator: function(arr) {
-        return arr.length > 0;
-      },
-      message: 'At least one course type must be selected'
-    }
-  },
-  deliveryType: {
-    type: String,
-    enum: ['live', 'recorded', 'hybrid'],
-    default: 'live'
+    enum: ['online', 'offline', 'hybrid', 'weekend'],
+    required: true
   },
   
-  // Syllabus and Content
+  // Languages - Updated to include specific regional languages
+  courseLanguages: {
+    type: [String],
+    enum: [
+      'english', 
+      'hindi', 
+      'regional',
+      // Major Indian languages
+      'telugu',
+      'tamil',
+      'marathi',
+      'kannada',
+      'malayalam',
+      'bengali',
+      'gujarati',
+      'punjabi',
+      'odia',
+      'urdu',
+      'assamese',
+      'kashmiri',
+      'konkani',
+      'manipuri',
+      'nepali',
+      'sanskrit',
+      'sindhi'
+    ],
+    default: ['english']
+  },
+  
+  // Location (for offline courses)
+  city: String,
+  state: String,
+  address: String,
+  coordinates: {
+    lat: Number,
+    lng: Number
+  },
+  
+  // Course content
+  subjects: [String],
+  highlights: [String],
+  whatYouWillLearn: [String],
+  prerequisites: [String],
+  targetAudience: String,
+  
+  // Course dates
+  startDate: {
+    type: Date,
+    required: true
+  },
+  endDate: {
+    type: Date,
+    required: true
+  },
+  enrollmentDeadline: Date,
+  
+  // Syllabus
   syllabusFile: {
     type: String
   },
@@ -202,11 +236,13 @@ const courseSchema = new mongoose.Schema({
     duration: String
   }],
   
-  // Enhanced Timetable
-  timetable: {
-    type: String,
-    default: '[]'
+  // Schedule - Array of schedule events
+  schedule: {
+    type: [scheduleSchema],
+    default: []
   },
+  
+  // Weekly Schedule (alternative format)
   weeklySchedule: [{
     day: {
       type: String,
@@ -291,6 +327,13 @@ const courseSchema = new mongoose.Schema({
     default: 'draft'
   },
   
+  // Delivery Type
+  deliveryType: {
+    type: String,
+    enum: ['live', 'recorded', 'mixed', 'hybrid'],
+    default: 'live'
+  },
+  
   // Admin action tracking
   adminAction: {
     action: String,
@@ -353,7 +396,7 @@ const courseSchema = new mongoose.Schema({
     default: 0
   },
   
-  // Analytics
+  // Tracking
   views: {
     type: Number,
     default: 0
@@ -362,10 +405,15 @@ const courseSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  leads: {
-    type: Number,
-    default: 0
-  },
+  
+  // Faculty details
+  faculty: [{
+    name: String,
+    subject: String,
+    qualification: String,
+    experience: String,
+    profileImage: String
+  }],
   
   // Timestamps
   createdAt: {
@@ -378,47 +426,34 @@ const courseSchema = new mongoose.Schema({
   }
 });
 
-// Indexes for better performance
-courseSchema.index({ institution: 1, createdAt: -1 });
-courseSchema.index({ isPublished: 1, createdAt: -1 });
-courseSchema.index({ courseType: 1, isPublished: 1 });
-courseSchema.index({ courseCategory: 1, isPublished: 1 });
+// Indexes
+courseSchema.index({ institution: 1, status: 1 });
+courseSchema.index({ courseCategory: 1, status: 1 });
 courseSchema.index({ city: 1, state: 1 });
-courseSchema.index({ startDate: 1 });
-courseSchema.index({ 'averageRating.overall': -1 });
-courseSchema.index({ views: -1 });
-courseSchema.index({ price: 1 });
+courseSchema.index({ title: 'text', description: 'text' });
+courseSchema.index({ 'schedule.date': 1 });
 
-// Text index for search (without language field conflict)
-courseSchema.index({ 
-  title: 'text', 
-  description: 'text', 
-  tags: 'text',
-  searchKeywords: 'text',
-  subjects: 'text',
-  city: 'text',
-  state: 'text'
-});
-
-// Geospatial index for location-based queries
-courseSchema.index({ coordinates: '2dsphere' });
-
-// Pre-save middleware - Updated to only count approved reviews
+// Pre-save middleware
 courseSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   
-  // Calculate rating only from approved reviews
+  // Calculate ratings
   const approvedReviews = this.reviews.filter(r => r.verificationStatus === 'approved');
   
   if (approvedReviews.length > 0) {
-    const totalCourse = approvedReviews.reduce((sum, review) => sum + review.courseRating, 0);
-    const totalInstitute = approvedReviews.reduce((sum, review) => sum + review.instituteRating, 0);
-    const totalFaculty = approvedReviews.reduce((sum, review) => sum + review.facultyRating, 0);
+    let totalCourse = 0, totalInstitute = 0, totalFaculty = 0;
+    
+    approvedReviews.forEach(review => {
+      totalCourse += review.courseRating;
+      totalInstitute += review.instituteRating;
+      totalFaculty += review.facultyRating;
+    });
     
     this.averageRating.course = totalCourse / approvedReviews.length;
     this.averageRating.institute = totalInstitute / approvedReviews.length;
     this.averageRating.faculty = totalFaculty / approvedReviews.length;
     this.averageRating.overall = (this.averageRating.course + this.averageRating.institute + this.averageRating.faculty) / 3;
+    
     this.totalReviews = approvedReviews.length;
   } else {
     this.averageRating = { course: 0, institute: 0, faculty: 0, overall: 0 };
@@ -466,7 +501,6 @@ courseSchema.methods.removeFromShortlist = function() {
   return this.save();
 };
 
-// FIXED: Updated canEnroll method with better logic
 courseSchema.methods.canEnroll = function() {
   // Check if course is published
   if (!this.isPublished) {
@@ -474,62 +508,25 @@ courseSchema.methods.canEnroll = function() {
     return false;
   }
   
-  // Check if course status is published (not suspended, archived, etc.)
+  // Check if course status is published
   if (this.status !== 'published') {
-    console.log('Course status is not published:', this.status);
+    console.log('Course status not published:', this.status);
     return false;
   }
   
-  // Check if course has not started yet (allow enrollment before start date)
-  const now = new Date();
-  const startDate = new Date(this.startDate);
-  const endDate = new Date(this.endDate);
-  
-  // Allow enrollment if current date is before the end date
-  if (now > endDate) {
-    console.log('Course has ended');
+  // Check if enrollment deadline has passed
+  if (this.enrollmentDeadline && new Date() > this.enrollmentDeadline) {
+    console.log('Enrollment deadline passed');
     return false;
   }
   
-  // Check availability (seats)
-  if (!this.isAvailable) {
-    console.log('No seats available');
+  // Check if course is full
+  if (this.maxStudents > 0 && this.currentEnrollments >= this.maxStudents) {
+    console.log('Course is full');
     return false;
   }
   
   return true;
-};
-
-// Static methods
-courseSchema.statics.findWithFilters = function(filters = {}) {
-  const query = { isPublished: true, status: 'published' };
-  
-  if (filters.category) query.courseCategory = filters.category;
-  if (filters.type) query.courseType = { $in: [filters.type] };
-  if (filters.city) query.city = new RegExp(filters.city, 'i');
-  if (filters.state) query.state = filters.state;
-  if (filters.courseLanguages) query.courseLanguages = { $in: [filters.courseLanguages] };
-  if (filters.minPrice) query.price = { $gte: filters.minPrice };
-  if (filters.maxPrice) query.price = { ...query.price, $lte: filters.maxPrice };
-  if (filters.startDate) query.startDate = { $gte: new Date(filters.startDate) };
-  
-  return this.find(query);
-};
-
-courseSchema.statics.findNearby = function(lat, lng, maxDistance = 50000) {
-  return this.find({
-    coordinates: {
-      $near: {
-        $geometry: {
-          type: 'Point',
-          coordinates: [lng, lat]
-        },
-        $maxDistance: maxDistance
-      }
-    },
-    isPublished: true,
-    status: 'published'
-  });
 };
 
 const Course = mongoose.model('Course', courseSchema);
