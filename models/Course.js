@@ -1,4 +1,4 @@
-// models/Course.js - Updated Course Model with proper schedule schema
+// models/Course.js - Complete Course Model with ALL frontend enum values included
 const mongoose = require('mongoose');
 
 // Review Schema
@@ -90,7 +90,7 @@ const scheduleSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['lecture', 'test', 'doubt-clearing', 'discussion', 'workshop', 'assignment'],
+    enum: ['lecture', 'test', 'exam', 'doubt-clearing', 'discussion', 'workshop', 'assignment', 'lab', 'tutorial', 'break'],
     default: 'lecture'
   },
   startTime: {
@@ -158,7 +158,7 @@ const courseSchema = new mongoose.Schema({
     required: true
   },
   
-  // Course categorization
+  // Course categorization - Updated to include ALL frontend values
   courseCategory: {
     type: String,
     enum: ['prelims', 'mains', 'interview', 'foundation', 'optional', 'prelims-cum-mains', 'optionals', 'test-series'],
@@ -166,20 +166,20 @@ const courseSchema = new mongoose.Schema({
   },
   courseType: {
     type: [String],
-    enum: ['online', 'offline', 'hybrid', 'weekend'],
+    enum: ['online', 'offline', 'hybrid', 'weekend', 'evening'],
     required: true
   },
   
-  // Languages - Updated to include specific regional languages
+  // Languages - Updated to include ALL frontend languages
   courseLanguages: {
     type: [String],
     enum: [
       'english', 
       'hindi', 
       'regional',
-      // Major Indian languages
-      'telugu',
+      // All languages from frontend
       'tamil',
+      'telugu',
       'marathi',
       'kannada',
       'malayalam',
@@ -255,7 +255,7 @@ const courseSchema = new mongoose.Schema({
       faculty: String,
       type: {
         type: String,
-        enum: ['lecture', 'test', 'doubt-clearing', 'discussion']
+        enum: ['lecture', 'test', 'doubt-clearing', 'discussion','workshop','assignment']
       }
     }]
   }],

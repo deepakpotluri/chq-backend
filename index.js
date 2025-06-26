@@ -51,6 +51,12 @@ const institutionRoutes = require('./routes/institutionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 
+// Import the getPublicInstitutionProfile function from institutionController
+const { getPublicInstitutionProfile } = require('./controllers/institutionController');
+
+// Import models for public courses route
+const Course = require('./models/Course');
+
 // Apply database middleware to all routes
 app.use(databaseMiddleware);
 
@@ -60,6 +66,54 @@ app.use('/api/aspirant', aspirantRoutes);
 app.use('/api/institution', institutionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
+
+// Public Institution Profile Route (now using the controller method)
+app.get('/api/institutions/:id/profile', getPublicInstitutionProfile);
+
+// Get institution courses (public)
+app.get('/api/institutions/:id/courses', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 12, category, type, sort = '-createdAt' } = req.query;
+    
+    // Build query
+    const query = { 
+      institution: id, 
+      isPublished: true,
+      isActive: true
+    };
+    
+    if (category) query.courseCategory = category;
+    if (type) query.courseType = type;
+    
+    // Execute query with pagination
+    const courses = await Course.find(query)
+      .populate('institution', 'institutionProfile.institutionName isVerified')
+      .sort(sort)
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+    
+    const total = await Course.countDocuments(query);
+    
+    res.status(200).json({
+      success: true,
+      data: courses,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit)
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get institution courses error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'production' ? {} : error.message 
+    });
+  }
+});
 
 // Base route
 app.get('/', (req, res) => {

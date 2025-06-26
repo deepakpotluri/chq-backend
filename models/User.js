@@ -1,70 +1,168 @@
-// models/User.js - Complete Enhanced User Model
+// models/User.js - Fixed User model with flexible Google Maps validation
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// Create a dedicated User schema
 const userSchema = new mongoose.Schema({
-  name: { 
-    type: String, 
-    required: [true, 'Name is required'],
-    trim: true
+  // Basic fields
+  name: {
+    type: String,
+    required: [true, 'Please add a name']
   },
-  email: { 
-    type: String, 
-    required: [true, 'Email is required'], 
+  email: {
+    type: String,
+    required: [true, 'Please add an email'],
     unique: true,
     lowercase: true,
-    trim: true,
-    match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please add a valid email']
+    match: [
+      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+      'Please add a valid email'
+    ]
   },
-  password: { 
-    type: String, 
-    required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters'], 
-    select: false 
+  password: {
+    type: String,
+    required: [true, 'Please add a password'],
+    minlength: 6,
+    select: false
   },
-  role: { 
-    type: String, 
+  role: {
+    type: String,
     enum: ['aspirant', 'institution', 'admin'],
-    default: 'aspirant' 
+    default: 'aspirant'
   },
   
-  // For institutions
-  institutionName: { 
-    type: String,
-    trim: true
-  },
-  institutionType: { 
-    type: String,
-    enum: ['coaching', 'university', 'college', 'other']
+  // Institution-specific embedded profile
+  institutionProfile: {
+    institutionName: {
+      type: String,
+      required: function() { return this.role === 'institution'; }
+    },
+    institutionType: {
+      type: String,
+      enum: ['university', 'college', 'training_center', 'coaching_institute', 'online_academy', 'other'],
+      required: function() { return this.role === 'institution'; }
+    },
+    
+    // Owner details
+    owner: {
+      name: {
+        type: String,
+        required: function() { return this.role === 'institution'; }
+      },
+      email: {
+        type: String,
+        required: function() { return this.role === 'institution'; },
+        match: [
+          /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+          'Please add a valid owner email'
+        ]
+      }
+    },
+    
+    // Contact person details
+    contactPerson: {
+      name: {
+        type: String,
+        required: function() { return this.role === 'institution'; }
+      },
+      designation: {
+        type: String,
+        required: function() { return this.role === 'institution'; }
+      },
+      phone: {
+        type: String,
+        required: function() { return this.role === 'institution'; },
+        validate: {
+          validator: function(v) {
+            // More flexible phone validation - allow various formats
+            return !v || /^[+]?[0-9\s\-().]+$/.test(v);
+          },
+          message: 'Please add a valid phone number'
+        }
+      },
+      email: {
+        type: String,
+        required: function() { return this.role === 'institution'; },
+        match: [
+          /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+          'Please add a valid contact email'
+        ]
+      }
+    },
+    
+    // Address details
+    address: {
+      street: String,
+      city: String,
+      state: String,
+      country: String,
+      zipCode: String,
+      fullAddress: {
+        type: String,
+        required: function() { return this.role === 'institution'; }
+      }
+    },
+    
+    // Google Maps link - More flexible validation
+    googleMapsLink: {
+      type: String,
+      required: function() { return this.role === 'institution'; },
+      validate: {
+        validator: function(v) {
+          // Allow empty string for non-institutions
+          if (this.role !== 'institution') return true;
+          
+          // More flexible validation - accept various Google Maps URL formats
+          return v && (
+            v.includes('google.com/maps') || 
+            v.includes('maps.google.com') || 
+            v.includes('goo.gl/maps') ||
+            v.includes('maps.app.goo.gl') ||
+            v.includes('google.com/maps/place')
+          );
+        },
+        message: 'Please provide a valid Google Maps link'
+      }
+    },
+    
+    // Additional optional fields
+    description: String,
+    establishedYear: Number,
+    website: String,
+    socialLinks: {
+      facebook: String,
+      twitter: String,
+      linkedin: String,
+      instagram: String
+    },
+    logo: String,
+    coverImage: String
   },
   
-  // Verification fields
-  isVerified: { 
-    type: Boolean, 
+  // Verification and status
+  isVerified: {
+    type: Boolean,
     default: function() {
-      // Aspirants are auto-verified, institutions need admin verification
-      return this.role === 'aspirant';
+      return this.role !== 'institution'; // Only institutions need verification
     }
   },
-  verifiedAt: Date,
-  verifiedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  
-  // Activity tracking
   isActive: {
     type: Boolean,
     default: true
   },
-  delistReason: String,
-  statusUpdatedAt: Date,
-  statusUpdatedBy: {
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'verified', 'rejected'],
+    default: function() {
+      return this.role === 'institution' ? 'pending' : 'verified';
+    }
+  },
+  verificationNote: String,
+  verifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  verifiedAt: Date,
   
   // Login tracking
   lastLogin: Date,
@@ -73,69 +171,69 @@ const userSchema = new mongoose.Schema({
     default: 0
   },
   loginHistory: [{
-    timestamp: Date,
+    timestamp: { type: Date, default: Date.now },
     ipAddress: String,
     userAgent: String
   }],
   
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
+  // Timestamps
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 });
 
-// Hash password before saving
+// Update timestamps on save
+userSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Encrypt password
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) {
-    return next();
-  }
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
     next();
-  } catch (error) {
-    next(error);
   }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
-// Sign JWT
+// Generate JWT token
 userSchema.methods.getSignedToken = function() {
   return jwt.sign(
     { id: this._id, role: this.role },
-    process.env.JWT_SECRET || 'mysecretkey',
-    { expiresIn: '30d' }
+    process.env.JWT_SECRET || 'your-secret-key',
+    { expiresIn: process.env.JWT_EXPIRE || '30d' }
   );
 };
 
-// Check password
-userSchema.methods.matchPassword = async function(enteredPassword) {
-  try {
-    return await bcrypt.compare(enteredPassword, this.password);
-  } catch (error) {
-    return false;
-  }
+// Match password
+userSchema.methods.matchPassword = async function(password) {
+  return await bcrypt.compare(password, this.password);
 };
 
 // Update login info
-userSchema.methods.updateLoginInfo = async function(ipAddress = null, userAgent = null) {
-  this.lastLogin = new Date();
-  this.loginCount += 1;
+userSchema.methods.updateLoginInfo = async function(ipAddress, userAgent) {
+  this.lastLogin = Date.now();
+  this.loginCount = (this.loginCount || 0) + 1;
+  
+  // Add to login history
+  this.loginHistory.push({
+    timestamp: Date.now(),
+    ipAddress,
+    userAgent
+  });
   
   // Keep only last 10 login records
-  if (this.loginHistory.length >= 10) {
-    this.loginHistory.shift();
+  if (this.loginHistory.length > 10) {
+    this.loginHistory = this.loginHistory.slice(-10);
   }
-  
-  this.loginHistory.push({
-    timestamp: new Date(),
-    ipAddress: ipAddress || 'Unknown',
-    userAgent: userAgent || 'Unknown'
-  });
   
   await this.save();
 };
 
-// This will create a "users" collection in MongoDB
-const User = mongoose.model('User', userSchema);
-
-module.exports = User;
+module.exports = mongoose.model('User', userSchema);
