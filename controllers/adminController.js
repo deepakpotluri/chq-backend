@@ -1,4 +1,4 @@
-// controllers/adminController.js - Fixed Admin Controller
+// controllers/adminController.js - Complete Updated Admin Controller
 const User = require('../models/User');
 const Course = require('../models/Course');
 
@@ -20,11 +20,28 @@ exports.getAdminStats = async (req, res) => {
     const courseCount = await Course.countDocuments();
     const publishedCourses = await Course.countDocuments({ isPublished: true });
     
-    // Count pending reviews across all courses
-    const coursesWithReviews = await Course.find({ 'reviews.0': { $exists: true } });
+    // Count pending reviews across all courses - FIXED
+    const coursesWithReviews = await Course.find({ 
+      'reviews': { $exists: true, $ne: [] } 
+    });
+    
     let pendingReviews = 0;
+    let approvedReviews = 0;
+    let rejectedReviews = 0;
+    
     coursesWithReviews.forEach(course => {
-      pendingReviews += course.reviews.filter(r => r.verificationStatus === 'pending').length;
+      if (course.reviews && course.reviews.length > 0) {
+        course.reviews.forEach(review => {
+          // Only count reviews that are actually pending
+          if (review.verificationStatus === 'pending' && !review.isVerified) {
+            pendingReviews++;
+          } else if (review.verificationStatus === 'approved' || review.isVerified) {
+            approvedReviews++;
+          } else if (review.verificationStatus === 'rejected') {
+            rejectedReviews++;
+          }
+        });
+      }
     });
     
     res.status(200).json({
@@ -35,7 +52,10 @@ exports.getAdminStats = async (req, res) => {
       pendingInstitutions,
       courseCount,
       publishedCourses,
-      pendingReviews
+      pendingReviews,
+      approvedReviews,
+      rejectedReviews,
+      totalReviews: pendingReviews + approvedReviews + rejectedReviews
     });
   } catch (error) {
     console.error('Error getting admin stats:', error);
@@ -51,37 +71,35 @@ exports.getAllUsers = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
-    const { role, isVerified } = req.query;
     
-    const query = {};
-    if (role) query.role = role;
-    if (isVerified !== undefined) query.isVerified = isVerified === 'true';
+    // Build filter
+    const filter = {};
+    if (req.query.role) filter.role = req.query.role;
+    if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
+    if (req.query.search) {
+      filter.$or = [
+        { name: new RegExp(req.query.search, 'i') },
+        { email: new RegExp(req.query.search, 'i') }
+      ];
+    }
     
     const users = await User
-      .find(query)
-      .skip(skip)
-      .limit(limit)
+      .find(filter)
       .select('-password')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
     
-    const total = await User.countDocuments(query);
-    
-    // Add login activity data
-    const usersWithActivity = users.map(user => ({
-      ...user.toObject(),
-      lastLogin: user.lastLogin || null,
-      loginCount: user.loginCount || 0
-    }));
+    const total = await User.countDocuments(filter);
     
     res.status(200).json({
       success: true,
-      count: users.length,
+      data: users,
       pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit)
-      },
-      data: usersWithActivity
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
     });
   } catch (error) {
     console.error('Error getting users:', error);
@@ -89,7 +107,7 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-// @desc    Get all institutions with detailed info
+// @desc    Get all institutions with filters
 // @route   GET /api/admin/institutions
 // @access  Private
 exports.getInstitutions = async (req, res) => {
@@ -97,56 +115,36 @@ exports.getInstitutions = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-    const { isVerified } = req.query;
     
-    // Build query to get only institution users
-    const query = { role: 'institution' };
-    if (isVerified !== undefined && isVerified !== '') {
-      query.isVerified = isVerified === 'true';
+    // Build filter
+    const filter = { role: 'institution' };
+    if (req.query.isVerified !== undefined) {
+      filter.isVerified = req.query.isVerified === 'true';
+    }
+    if (req.query.search) {
+      filter.$or = [
+        { institutionName: new RegExp(req.query.search, 'i') },
+        { email: new RegExp(req.query.search, 'i') }
+      ];
     }
     
-    console.log('Fetching institutions with query:', query); // Debug log
-    
     const institutions = await User
-      .find(query)
-      .skip(skip)
-      .limit(limit)
+      .find(filter)
       .select('-password')
       .sort({ createdAt: -1 })
-      .lean();
+      .skip(skip)
+      .limit(limit);
     
-    console.log(`Found ${institutions.length} institutions`); // Debug log
-    
-    // Get course count for each institution
-    const institutionsWithStats = await Promise.all(
-      institutions.map(async (inst) => {
-        const courseCount = await Course.countDocuments({ institution: inst._id });
-        const publishedCourseCount = await Course.countDocuments({ 
-          institution: inst._id, 
-          isPublished: true 
-        });
-        
-        return {
-          ...inst,
-          courseCount,
-          publishedCourseCount,
-          lastLogin: inst.lastLogin || null,
-          loginCount: inst.loginCount || 0
-        };
-      })
-    );
-    
-    const total = await User.countDocuments(query);
+    const total = await User.countDocuments(filter);
     
     res.status(200).json({
       success: true,
-      count: institutions.length,
+      data: institutions,
       pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit)
-      },
-      data: institutionsWithStats
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
     });
   } catch (error) {
     console.error('Error getting institutions:', error);
@@ -154,31 +152,26 @@ exports.getInstitutions = async (req, res) => {
   }
 };
 
-// @desc    Verify/Unverify institution
+// @desc    Verify institution
 // @route   PUT /api/admin/institutions/:id/verify
 // @access  Private
 exports.verifyInstitution = async (req, res) => {
   try {
-    const { isVerified } = req.body;
     const institution = await User.findById(req.params.id);
     
-    if (!institution) {
+    if (!institution || institution.role !== 'institution') {
       return res.status(404).json({ success: false, message: 'Institution not found' });
     }
     
-    if (institution.role !== 'institution') {
-      return res.status(400).json({ success: false, message: 'User is not an institution' });
-    }
-    
-    institution.isVerified = isVerified;
-    institution.verifiedAt = isVerified ? new Date() : null;
-    institution.verifiedBy = isVerified ? req.user.id : null;
+    institution.isVerified = true;
+    institution.verifiedAt = new Date();
+    institution.verifiedBy = req.user.id;
     
     await institution.save();
     
     res.status(200).json({
       success: true,
-      message: `Institution ${isVerified ? 'verified' : 'unverified'} successfully`,
+      message: 'Institution verified successfully',
       data: institution
     });
   } catch (error) {
@@ -187,49 +180,32 @@ exports.verifyInstitution = async (req, res) => {
   }
 };
 
-// @desc    Delist/Relist institution
+// @desc    Update institution status
 // @route   PUT /api/admin/institutions/:id/status
 // @access  Private
 exports.updateInstitutionStatus = async (req, res) => {
   try {
-    const { isActive, reason } = req.body;
+    const { status, reason } = req.body;
     const institution = await User.findById(req.params.id);
     
     if (!institution || institution.role !== 'institution') {
       return res.status(404).json({ success: false, message: 'Institution not found' });
     }
     
-    institution.isActive = isActive;
-    if (!isActive && reason) {
-      institution.delistReason = reason;
-    } else if (isActive) {
-      institution.delistReason = undefined;
+    if (status === 'active') {
+      institution.isActive = true;
+      institution.deactivatedAt = null;
+    } else if (status === 'inactive') {
+      institution.isActive = false;
+      institution.deactivatedAt = new Date();
+      institution.deactivationReason = reason;
     }
-    institution.statusUpdatedAt = new Date();
-    institution.statusUpdatedBy = req.user.id;
     
     await institution.save();
     
-    // If delisting, unpublish all their courses
-    if (!isActive) {
-      await Course.updateMany(
-        { institution: institution._id },
-        { 
-          isPublished: false, 
-          status: 'suspended',
-          adminAction: {
-            action: 'unpublished',
-            reason: `Institution delisted: ${reason}`,
-            actionBy: req.user.id,
-            actionAt: new Date()
-          }
-        }
-      );
-    }
-    
     res.status(200).json({
       success: true,
-      message: `Institution ${isActive ? 'activated' : 'delisted'} successfully`,
+      message: `Institution ${status === 'active' ? 'activated' : 'deactivated'} successfully`,
       data: institution
     });
   } catch (error) {
@@ -238,56 +214,44 @@ exports.updateInstitutionStatus = async (req, res) => {
   }
 };
 
-// @desc    Get all courses with admin controls
+// @desc    Get all courses with filters
 // @route   GET /api/admin/courses
 // @access  Private
 exports.getAllCourses = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-    const { isPublished, status, institutionId } = req.query;
     
-    const query = {};
-    if (isPublished !== undefined && isPublished !== '') {
-      query.isPublished = isPublished === 'true';
+    // Build filter
+    const filter = {};
+    if (req.query.isPublished !== undefined) {
+      filter.isPublished = req.query.isPublished === 'true';
     }
-    if (status && status !== '') query.status = status;
-    if (institutionId) query.institution = institutionId;
-    
-    console.log('Fetching courses with query:', query); // Debug log
+    if (req.query.search) {
+      filter.$or = [
+        { title: new RegExp(req.query.search, 'i') },
+        { category: new RegExp(req.query.search, 'i') }
+      ];
+    }
     
     const courses = await Course
-      .find(query)
-      .populate('institution', 'institutionName email isVerified')
-      .skip(skip)
-      .limit(limit)
+      .find(filter)
+      .populate('institution', 'institutionName email')
       .sort({ createdAt: -1 })
-      .lean();
+      .skip(skip)
+      .limit(limit);
     
-    console.log(`Found ${courses.length} courses`); // Debug log
-    
-    const total = await Course.countDocuments(query);
-    
-    // Ensure all fields are properly formatted
-    const formattedCourses = courses.map(course => ({
-      ...course,
-      price: course.price || 0,
-      currentEnrollments: course.currentEnrollments || 0,
-      views: course.views || 0,
-      averageRating: course.averageRating || { overall: 0 },
-      totalReviews: course.totalReviews || 0
-    }));
+    const total = await Course.countDocuments(filter);
     
     res.status(200).json({
       success: true,
-      count: courses.length,
+      data: courses,
       pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit)
-      },
-      data: formattedCourses
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
     });
   } catch (error) {
     console.error('Error getting courses:', error);
@@ -295,20 +259,21 @@ exports.getAllCourses = async (req, res) => {
   }
 };
 
-// @desc    Unpublish/Publish course
+// @desc    Toggle course publication status
 // @route   PUT /api/admin/courses/:id/publish
 // @access  Private
 exports.toggleCoursePublication = async (req, res) => {
   try {
-    const { isPublished, reason } = req.body;
+    const { action, reason } = req.body;
     const course = await Course.findById(req.params.id);
     
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
     
+    const isPublished = action === 'publish';
     course.isPublished = isPublished;
-    course.status = isPublished ? 'published' : 'suspended';
+    course.publishStatus = isPublished ? 'published' : 'suspended';
     course.adminAction = {
       action: isPublished ? 'published' : 'unpublished',
       reason: reason || '',
@@ -329,13 +294,19 @@ exports.toggleCoursePublication = async (req, res) => {
   }
 };
 
-// @desc    Get all pending reviews
+// @desc    Get all pending reviews - UPDATED
 // @route   GET /api/admin/reviews/pending
 // @access  Private
 exports.getPendingReviews = async (req, res) => {
   try {
+    // More specific query to find only pending reviews
     const courses = await Course.find({
-      'reviews.verificationStatus': 'pending'
+      'reviews': {
+        $elemMatch: {
+          verificationStatus: 'pending',
+          isVerified: { $ne: true }
+        }
+      }
     }).populate('reviews.user', 'name email').lean();
     
     const pendingReviews = [];
@@ -343,7 +314,8 @@ exports.getPendingReviews = async (req, res) => {
     courses.forEach(course => {
       if (course.reviews && course.reviews.length > 0) {
         course.reviews.forEach(review => {
-          if (review.verificationStatus === 'pending') {
+          // Double-check that review is actually pending
+          if (review.verificationStatus === 'pending' && !review.isVerified) {
             pendingReviews.push({
               reviewId: review._id,
               courseId: course._id,
@@ -353,7 +325,9 @@ exports.getPendingReviews = async (req, res) => {
               instituteRating: review.instituteRating,
               facultyRating: review.facultyRating,
               reviewText: review.reviewText,
-              createdAt: review.createdAt
+              createdAt: review.createdAt,
+              verificationStatus: review.verificationStatus,
+              isVerified: review.isVerified
             });
           }
         });
@@ -374,7 +348,7 @@ exports.getPendingReviews = async (req, res) => {
   }
 };
 
-// @desc    Verify review
+// @desc    Verify review - UPDATED
 // @route   PUT /api/admin/reviews/:courseId/:reviewId/verify
 // @access  Private
 exports.verifyReview = async (req, res) => {
@@ -392,6 +366,7 @@ exports.verifyReview = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Review not found' });
     }
     
+    // Update review based on action
     if (action === 'approve') {
       review.verificationStatus = 'approved';
       review.isVisible = true;
@@ -399,7 +374,12 @@ exports.verifyReview = async (req, res) => {
     } else if (action === 'reject') {
       review.verificationStatus = 'rejected';
       review.isVisible = false;
+      review.isVerified = false;
       review.rejectionReason = rejectionReason;
+    } else if (action === 'archive') {
+      review.verificationStatus = 'archived';
+      review.isVisible = false;
+      review.isVerified = false;
     }
     
     review.verifiedBy = req.user.id;
@@ -407,9 +387,19 @@ exports.verifyReview = async (req, res) => {
     
     await course.save();
     
+    // Recalculate course average ratings if review was approved
+    if (action === 'approve') {
+      const visibleReviews = course.reviews.filter(r => r.isVisible && r.isVerified);
+      if (visibleReviews.length > 0) {
+        course.averageRating = visibleReviews.reduce((sum, r) => sum + r.courseRating, 0) / visibleReviews.length;
+        course.totalReviews = visibleReviews.length;
+        await course.save();
+      }
+    }
+    
     res.status(200).json({
       success: true,
-      message: `Review ${action}ed successfully`,
+      message: `Review ${action}d successfully`,
       data: review
     });
   } catch (error) {
@@ -432,20 +422,18 @@ exports.getLoginActivity = async (req, res) => {
       .select('email role lastLogin loginCount')
       .sort({ lastLogin: -1 })
       .skip(skip)
-      .limit(limit)
-      .lean();
+      .limit(limit);
     
-    const formattedActivity = loginActivity.map(activity => ({
-      _id: activity._id,
-      email: activity.email,
-      role: activity.role,
-      lastLogin: activity.lastLogin || null,
-      loginCount: activity.loginCount || 0
-    }));
+    const total = await User.countDocuments();
     
     res.status(200).json({
       success: true,
-      data: formattedActivity
+      data: loginActivity,
+      pagination: {
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
     });
   } catch (error) {
     console.error('Error getting login activity:', error);
@@ -458,44 +446,24 @@ exports.getLoginActivity = async (req, res) => {
 // @access  Private
 exports.getSystemOverview = async (req, res) => {
   try {
-    // Revenue calculations
-    const allCourses = await Course.find({}).lean();
-    let totalRevenue = 0;
-    let totalEnrollments = 0;
-    
-    allCourses.forEach(course => {
-      const price = course.price || 0;
-      const enrollments = course.currentEnrollments || 0;
-      const revenue = price * enrollments;
-      totalRevenue += revenue;
-      totalEnrollments += enrollments;
-    });
-    
-    // Get recent activities
-    const recentInstitutions = await User
-      .find({ role: 'institution' })
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .select('institutionName email createdAt isVerified')
-      .lean();
-    
-    const recentCourses = await Course
-      .find({})
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .populate('institution', 'institutionName')
-      .select('title institution createdAt isPublished')
-      .lean();
+    const overview = {
+      database: {
+        status: 'connected',
+        collections: {
+          users: await User.countDocuments(),
+          courses: await Course.countDocuments()
+        }
+      },
+      server: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        nodeVersion: process.version
+      }
+    };
     
     res.status(200).json({
       success: true,
-      overview: {
-        totalRevenue,
-        totalEnrollments,
-        averageRevenuePerCourse: allCourses.length > 0 ? (totalRevenue / allCourses.length).toFixed(2) : 0,
-        recentInstitutions: recentInstitutions || [],
-        recentCourses: recentCourses || []
-      }
+      overview
     });
   } catch (error) {
     console.error('Error getting system overview:', error);
@@ -503,7 +471,7 @@ exports.getSystemOverview = async (req, res) => {
   }
 };
 
-// @desc    Update user status (activate/deactivate)
+// @desc    Update user status
 // @route   PUT /api/admin/users/:id/status
 // @access  Private
 exports.updateUserStatus = async (req, res) => {
@@ -516,6 +484,12 @@ exports.updateUserStatus = async (req, res) => {
     }
     
     user.isActive = isActive;
+    if (!isActive) {
+      user.deactivatedAt = new Date();
+    } else {
+      user.deactivatedAt = null;
+    }
+    
     await user.save();
     
     res.status(200).json({
