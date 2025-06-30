@@ -1,4 +1,4 @@
-// routes/adminRoutes.js - Fixed Admin Routes
+// routes/adminRoutes.js - Updated Admin Routes with getAllReviews
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
@@ -11,6 +11,7 @@ const {
   getAllCourses,
   toggleCoursePublication,
   getPendingReviews,
+  getAllReviews,
   verifyReview,
   getLoginActivity,
   getSystemOverview,
@@ -41,6 +42,7 @@ router.put('/courses/:id/publish', toggleCoursePublication);
 
 // Review Management
 router.get('/reviews/pending', getPendingReviews);
+router.get('/reviews/all', getAllReviews); // NEW ROUTE
 router.put('/reviews/:courseId/:reviewId/verify', verifyReview);
 
 module.exports = router;
