@@ -1,6 +1,7 @@
 // controllers/adminController.js - Updated with getAllReviews functionality
 const User = require('../models/User');
 const Course = require('../models/Course');
+const AdminSettings = require('../models/AdminSettings');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/stats
@@ -58,6 +59,108 @@ exports.getAdminStats = async (req, res) => {
   } catch (error) {
     console.error('Error getting admin stats:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
+exports.getHomepagePromotedCourses = async (req, res) => {
+  try {
+    const promotedCourses = await Course.find({
+      promotionLevel: { $in: ['basic', 'premium', 'featured'] },
+      isPublished: true,
+      status: { $ne: 'suspended' }
+    })
+    .populate('institution', 'institutionName email')
+    .select('title price promotionLevel averageRating totalReviews homepagePromotionOrder homepagePromotionEnabled')
+    .sort('-promotionLevel -averageRating.overall');
+
+    const settings = await AdminSettings.findOne()
+      .populate({
+        path: 'homepagePromotedCourses.course',
+        populate: {
+          path: 'institution',
+          select: 'institutionName'
+        }
+      });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        availableCourses: promotedCourses,
+        homepageSettings: settings?.homepagePromotedCourses || [],
+        totalPromoted: promotedCourses.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching promoted courses',
+      error: error.message
+    });
+  }
+};
+
+// Update homepage promoted courses
+exports.updateHomepagePromotedCourses = async (req, res) => {
+  try {
+    const { courses } = req.body;
+    
+    if (!Array.isArray(courses) || courses.length === 0 || courses.length > 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select between 1 and 4 courses'
+      });
+    }
+
+    const courseIds = courses.map(c => c.courseId);
+    const validCourses = await Course.find({
+      _id: { $in: courseIds },
+      promotionLevel: { $in: ['basic', 'premium', 'featured'] },
+      isPublished: true,
+      status: { $ne: 'suspended' }
+    });
+
+    if (validCourses.length !== courses.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Some courses are not eligible for homepage promotion'
+      });
+    }
+
+    await Course.updateMany(
+      { homepagePromotionEnabled: true },
+      { homepagePromotionEnabled: false, homepagePromotionOrder: null }
+    );
+
+    for (const courseData of courses) {
+      await Course.findByIdAndUpdate(courseData.courseId, {
+        homepagePromotionEnabled: true,
+        homepagePromotionOrder: courseData.order
+      });
+    }
+
+    let settings = await AdminSettings.findOne();
+    if (!settings) {
+      settings = new AdminSettings();
+    }
+
+    settings.homepagePromotedCourses = courses.map(c => ({
+      course: c.courseId,
+      order: c.order
+    }));
+    settings.lastUpdatedBy = req.user._id;
+    await settings.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Homepage promoted courses updated successfully',
+      data: settings
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating homepage promoted courses',
+      error: error.message
+    });
   }
 };
 

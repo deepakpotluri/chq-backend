@@ -287,7 +287,21 @@ const courseSchema = new mongoose.Schema({
         isPreview: {
           type: Boolean,
           default: false
-        }
+        },
+        homepagePromotionOrder: {
+  type: Number,
+  default: null, // null means not displayed on homepage
+  min: 1,
+  max: 4
+},
+homepagePromotionEnabled: {
+  type: Boolean,
+  default: false
+},
+promotionExpiryDate: {
+  type: Date,
+  default: null
+}
       }]
     }],
     default: []

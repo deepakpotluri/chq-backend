@@ -50,6 +50,20 @@ router.get('/published', async (req, res) => {
       query.courseLanguages = { $in: [req.query.language] };
     }
     
+    if (req.query.homepage === 'true') {
+  query.homepagePromotionEnabled = true;
+  
+  const courses = await Course.find(query)
+    .sort('homepagePromotionOrder')
+    .limit(4)
+    .populate('institution', 'institutionName email verified')
+    .lean();
+  
+  return res.status(200).json({
+    success: true,
+    data: courses
+  });
+}
     // Price range filters
     if (req.query.minPrice || req.query.maxPrice) {
       query.price = {};

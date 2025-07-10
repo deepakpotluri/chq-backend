@@ -15,7 +15,9 @@ const {
   verifyReview,
   getLoginActivity,
   getSystemOverview,
-  updateUserStatus
+  updateUserStatus,
+  getHomepagePromotedCourses,
+  updateHomepagePromotedCourses
 } = require('../controllers/adminController');
 
 // Apply auth middleware to all routes
@@ -39,6 +41,10 @@ router.put('/institutions/:id/status', updateInstitutionStatus);
 // Course Management
 router.get('/courses', getAllCourses);
 router.put('/courses/:id/publish', toggleCoursePublication);
+
+// Promoted Courses Management
+router.get('/promoted-courses/homepage', getHomepagePromotedCourses);
+router.put('/promoted-courses/homepage', updateHomepagePromotedCourses);
 
 // Review Management
 router.get('/reviews/pending', getPendingReviews);
