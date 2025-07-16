@@ -1,48 +1,41 @@
-// config/db.js - Optimized for Vercel serverless
 const mongoose = require('mongoose');
 
-// Prevent multiple connections in serverless environment
-let isConnected = false;
+let cached = global.mongoose;
 
-const connectDB = async () => {
-  if (isConnected) {
-    console.log('Using existing database connection');
-    return;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
+async function connectDB() {
+  if (cached.conn) {
+    return cached.conn;
   }
 
-  if (!process.env.MONGODB_URI) {
-    throw new Error('MONGODB_URI is not defined in environment variables');
-  }
-
-  try {
+  if (!cached.promise) {
     const opts = {
-      bufferCommands: true, // Enable buffering
+      bufferCommands: false,
       maxPoolSize: 10,
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
     };
 
-    await mongoose.connect(process.env.MONGODB_URI, opts);
-    
-    isConnected = true;
-    console.log('MongoDB connected successfully');
-    
-    // Handle connection events
-    mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB disconnected');
-      isConnected = false;
-    });
+    if (!process.env.MONGODB_URI) {
+      throw new Error('Please define the MONGODB_URI environment variable');
+    }
 
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB connection error:', err);
-      isConnected = false;
+    cached.promise = mongoose.connect(process.env.MONGODB_URI, opts).then((mongoose) => {
+      return mongoose;
     });
-
-  } catch (error) {
-    console.error('MongoDB connection failed:', error);
-    isConnected = false;
-    throw error;
   }
-};
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+
+  return cached.conn;
+}
 
 module.exports = connectDB;
