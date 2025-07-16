@@ -7,7 +7,9 @@ const path = require('path');
 const databaseMiddleware = require('./middleware/database');
 
 // Load environment variables
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 // Initialize express app
 const app = express();
