@@ -1,22 +1,20 @@
+// index.js
 const express = require('express');
 const cors = require('cors');
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
 const path = require('path');
+const databaseMiddleware = require('./middleware/database');
 
-// IMPORTANT: Don't use dotenv.config() in production/Vercel
-// Vercel automatically loads environment variables
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
+// Load environment variables
+require('dotenv').config();
 
 // Initialize express app
 const app = express();
 
-// Database connection
-const connectDB = require('./config/db');
-
-// CORS configuration
+// CORS configuration - Allow all origins
 const corsOptions = {
-  origin: '*',
+  origin: '*', // Allow all origins
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
@@ -32,16 +30,10 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Static files - Note: Vercel doesn't support file uploads to /uploads
-// You'll need to use a cloud storage service like AWS S3 or Cloudinary
-if (process.env.NODE_ENV !== 'production') {
-  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-}
-
-// Additional CORS headers
+// Add headers middleware for additional CORS support
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
@@ -52,14 +44,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes - Import after middleware
+// Routes
 const authRoutes = require('./routes/authRoutes');
 const aspirantRoutes = require('./routes/aspirantRoutes');
 const institutionRoutes = require('./routes/institutionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const courseRoutes = require('./routes/courseRoutes');
+
+// Import the getPublicInstitutionProfile function from institutionController
 const { getPublicInstitutionProfile } = require('./controllers/institutionController');
+
+// Import models for public courses route
 const Course = require('./models/Course');
+
+// Apply database middleware to all routes
+app.use(databaseMiddleware);
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -68,18 +67,16 @@ app.use('/api/institution', institutionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
 
-// Public routes
+// Public Institution Profile Route (now using the controller method)
 app.get('/api/institutions/:id/profile', getPublicInstitutionProfile);
 
 // Get institution courses (public)
 app.get('/api/institutions/:id/courses', async (req, res) => {
   try {
-    // Ensure database is connected
-    await connectDB();
-    
     const { id } = req.params;
     const { page = 1, limit = 12, category, type, sort = '-createdAt' } = req.query;
     
+    // Build query
     const query = { 
       institution: id, 
       isPublished: true,
@@ -89,6 +86,7 @@ app.get('/api/institutions/:id/courses', async (req, res) => {
     if (category) query.courseCategory = category;
     if (type) query.courseType = type;
     
+    // Execute query with pagination
     const courses = await Course.find(query)
       .populate('institution', 'institutionProfile.institutionName isVerified')
       .sort(sort)
@@ -119,62 +117,35 @@ app.get('/api/institutions/:id/courses', async (req, res) => {
 
 // Base route
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Civils HQ API is running',
-    environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString()
-  });
+  res.json({ message: 'Civils HQ API is running' });
 });
 
 // Health check endpoint
-app.get('/api/health', async (req, res) => {
-  try {
-    // Check database connection
-    await connectDB();
-    
-    res.json({ 
-      status: 'ok', 
-      message: 'API is healthy',
-      database: 'connected',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(503).json({ 
-      status: 'error', 
-      message: 'API is unhealthy',
-      database: 'disconnected',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route not found',
-    path: req.originalUrl
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'API is healthy',
+    timestamp: new Date().toISOString()
   });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(err.status || 500).json({
+  console.error('Server error:', err.stack);
+  res.status(500).json({
     success: false,
-    message: err.message || 'Server Error',
+    message: 'Server Error',
     error: process.env.NODE_ENV === 'production' ? {} : err.stack
   });
 });
 
-// For local development only
+// For Vercel deployment
+const PORT = process.env.PORT || 5000;
+
+// Start the server for local development
 if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    connectDB(); // Connect to database on startup for local dev
-  });
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
+// Export for Vercel
 module.exports = app;
