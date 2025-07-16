@@ -176,3 +176,5 @@ if (process.env.NODE_ENV !== 'production') {
     connectDB(); // Connect to database on startup for local dev
   });
 }
+
+module.exports = app;
