@@ -30,6 +30,20 @@ const userSchema = new mongoose.Schema({
     enum: ['aspirant', 'institution', 'admin'],
     default: 'aspirant'
   },
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
+  emailVerificationOTP: {
+    type: String,
+    select: false
+  },
+  emailVerificationOTPExpire: {
+    type: Date,
+    select: false
+  },
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
   
   // Institution-specific embedded profile
   institutionProfile: {
@@ -214,6 +228,40 @@ userSchema.methods.getSignedToken = function() {
 // Match password
 userSchema.methods.matchPassword = async function(password) {
   return await bcrypt.compare(password, this.password);
+};
+
+// Generate OTP for email verification
+userSchema.methods.generateEmailOTP = function() {
+  // Generate 6 digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  // Hash OTP
+  this.emailVerificationOTP = require('crypto')
+    .createHash('sha256')
+    .update(otp)
+    .digest('hex');
+  
+  // Set OTP expire time (10 minutes)
+  this.emailVerificationOTPExpire = Date.now() + 10 * 60 * 1000;
+  
+  return otp;
+};
+
+// Get reset password token (if you don't have this already)
+userSchema.methods.getResetPasswordToken = function() {
+  // Generate token
+  const resetToken = require('crypto').randomBytes(20).toString('hex');
+  
+  // Hash token and set to resetPasswordToken field
+  this.resetPasswordToken = require('crypto')
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+  
+  // Set expire
+  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  
+  return resetToken;
 };
 
 // Update login info

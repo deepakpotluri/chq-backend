@@ -1,5 +1,10 @@
 // controllers/authController.js - Complete version with institution profile support
 const User = require('../models/User');
+const crypto = require('crypto');
+const { sendOTPEmail } = require('../services/emailServices');
+
+
+const otpStore = new Map();
 
 // @desc    Register user (including institutions with full profile)
 // @route   POST /api/auth/signup
@@ -12,15 +17,31 @@ exports.signup = async (req, res) => {
       password, 
       role, 
       adminCode,
-      institutionProfile 
+      institutionProfile,
+      isEmailVerified 
     } = req.body;
+
+    const otpData = otpStore.get(email);
+    if (!isEmailVerified || !otpData || !otpData.verified) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Please verify your email before signing up' 
+      });
+    }
+
+     otpStore.delete(email);
     
     // Check if user exists
     const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({ success: false, message: 'Email already registered' });
+  // If user exists but email not verified, delete the temp user
+   if (userExists) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email already registered' 
+      });
     }
-    
+}
     // Verify admin code if registering as admin
     if (role === 'admin') {
       const adminSecretCode = process.env.ADMIN_SECRET_CODE || 'admin123';
@@ -34,7 +55,8 @@ exports.signup = async (req, res) => {
       name: role === 'institution' ? institutionProfile?.institutionName || name : name, 
       email, 
       password, 
-      role 
+      role,
+      isEmailVerified: true
     };
     
     // Add institution-specific data if role is institution
@@ -111,6 +133,140 @@ exports.signup = async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Server error during registration',
+      error: error.message 
+    });
+  }
+};
+
+
+// @desc    Send OTP for email verification
+// @route   POST /api/auth/send-otp
+// @access  Public
+exports.sendOTP = async (req, res) => {
+  try {
+    const { email, name, role } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required' 
+      });
+    }
+    
+    // Check if email already exists and is verified
+    const existingUser = await User.findOne({ email });
+    if (existingUser && existingUser.isEmailVerified) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email already registered and verified' 
+      });
+    }
+    
+    // If user exists but not verified, delete the old record
+    if (existingUser && !existingUser.isEmailVerified) {
+      await User.deleteOne({ email });
+    }
+    
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store OTP data in memory (use Redis in production)
+    const otpData = {
+      otp: crypto.createHash('sha256').update(otp).digest('hex'),
+      email,
+      name: name || 'User',
+      role: role || 'aspirant',
+      expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
+    };
+    
+    otpStore.set(email, otpData);
+    
+    // Send OTP email
+    const emailSent = await sendOTPEmail(email, otp, name || 'User');
+    
+    if (!emailSent) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to send verification email' 
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: 'OTP sent successfully',
+      email // Return email for reference
+    });
+  } catch (error) {
+    console.error('Send OTP error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error',
+      error: error.message 
+    });
+  }
+};
+
+// @desc    Verify OTP
+// @route   POST /api/auth/verify-otp
+// @access  Public
+exports.verifyOTP = async (req, res) => {
+  try {
+    const { otp, email } = req.body;
+    
+    if (!otp || !email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'OTP and email are required' 
+      });
+    }
+    
+    // Get stored OTP data
+    const otpData = otpStore.get(email);
+    
+    if (!otpData) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'OTP expired or invalid' 
+      });
+    }
+    
+    // Check if OTP is expired
+    if (otpData.expiresAt < Date.now()) {
+      otpStore.delete(email);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'OTP has expired' 
+      });
+    }
+    
+    // Hash the provided OTP
+    const hashedProvidedOTP = crypto
+      .createHash('sha256')
+      .update(otp)
+      .digest('hex');
+    
+    // Compare with stored hash
+    if (hashedProvidedOTP !== otpData.otp) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid OTP' 
+      });
+    }
+    
+    // OTP is valid, mark as verified
+    otpData.verified = true;
+    otpStore.set(email, otpData);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully',
+      email: otpData.email
+    });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error',
       error: error.message 
     });
   }
