@@ -40,6 +40,28 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
 
+// Add this after the existing upload configuration
+const uploadMultiple = multer({ 
+  storage, 
+  fileFilter: (req, file, cb) => {
+    if (file.fieldname === 'syllabusFile' && file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else if ((file.fieldname === 'coverImage' || file.fieldname === 'galleryImages') && file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type'), false);
+    }
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+// Update the createCourse method to use:
+uploadMultiple.fields([
+  { name: 'syllabusFile', maxCount: 1 },
+  { name: 'coverImage', maxCount: 1 },
+  { name: 'galleryImages', maxCount: 10 }
+]);
+
 // Helper function to parse array fields
 const parseArrayField = (field) => {
   if (!field) return [];
@@ -491,13 +513,17 @@ exports.createCourse = async (req, res) => {
           schedule,
           syllabusDetails,
           faculty,
-          tags
+          tags,
+           prerequisites,
+          targetAudience,
+          
         } = req.body;
         
         // Parse JSON strings back to arrays/objects
         let parsedSchedule = [];
         let parsedFaculty = [];
         let parsedTags = [];
+        let parsedSyllabusDetails = [];
         
         try {
           if (schedule) {
@@ -525,6 +551,15 @@ exports.createCourse = async (req, res) => {
           console.error('Error parsing tags:', parseError);
           parsedTags = [];
         }
+
+         try {
+          if (syllabusDetails) {
+            parsedSyllabusDetails = typeof syllabusDetails === 'string' ? JSON.parse(syllabusDetails) : syllabusDetails;
+          }
+        } catch (parseError) {
+          console.error('Error parsing syllabusDetails:', parseError);
+          parsedSyllabusDetails = [];
+        }
         
         // Create course object with all fields - FIXED PARSING
         const courseData = {
@@ -546,9 +581,11 @@ exports.createCourse = async (req, res) => {
           endDate: endDate ? new Date(endDate) : undefined,
           highlights: parseArrayField(highlights),
           whatYouWillLearn: parseArrayField(whatYouWillLearn),
+          prerequisites: parseArrayField(prerequisites),
+          targetAudience, 
           maxStudents: maxStudents ? Number(maxStudents) : 0,
           schedule: parsedSchedule,
-          syllabusDetails,
+          syllabusDetails: parsedSyllabusDetails,
           syllabusFile: req.file ? req.file.path : undefined,
           faculty: parsedFaculty,
           tags: parsedTags,
@@ -623,7 +660,9 @@ exports.updateCourse = async (req, res) => {
           'duration', 'courseCategory', 'courseType', 'courseLanguages',
           'subjects', 'city', 'state', 'address', 'startDate', 'endDate',
           'highlights', 'whatYouWillLearn', 'maxStudents', 'schedule',
-          'syllabusDetails', 'faculty', 'tags', 'isPublished'
+          'syllabusDetails', 'faculty', 'tags', 'isPublished','prerequisites',
+          'targetAudience', 'coordinates',
+          'coverImage', 'galleryImages'
         ];
         
         // Process each field
@@ -631,8 +670,7 @@ exports.updateCourse = async (req, res) => {
           if (allowedFields.includes(field)) {
             if (field === 'schedule' || field === 'faculty' || field === 'tags') {
               try {
-                updateFields[field] = typeof req.body[field] === 'string' ? 
-                  JSON.parse(req.body[field]) : req.body[field];
+                updateFields[field] = typeof req.body[field] === 'string' ? JSON.parse(req.body[field]) : req.body[field];
               } catch (e) {
                 updateFields[field] = req.body[field];
               }
