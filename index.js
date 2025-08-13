@@ -71,6 +71,8 @@ app.use('/api/courses', courseRoutes);
 app.get('/api/institutions/:id/profile', getPublicInstitutionProfile);
 
 // Get institution courses (public)
+// FIND THIS CODE IN YOUR index.js:
+// Get institution courses - OPTIMIZED VERSION
 app.get('/api/institutions/:id/courses', async (req, res) => {
   try {
     const { id } = req.params;
@@ -86,14 +88,17 @@ app.get('/api/institutions/:id/courses', async (req, res) => {
     if (category) query.courseCategory = category;
     if (type) query.courseType = type;
     
-    // Execute query with pagination
-    const courses = await Course.find(query)
-      .populate('institution', 'institutionProfile.institutionName isVerified')
-      .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-    
-    const total = await Course.countDocuments(query);
+    // OPTIMIZED: Execute both queries in parallel and use lean()
+    const [courses, total] = await Promise.all([
+      Course.find(query)
+        .populate('institution', 'institutionProfile.institutionName isVerified')
+        .select('title description courseCategory courseType price duration createdAt features imageUrl') // Only select needed fields
+        .sort(sort)
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .lean(), // Much faster - returns plain JS objects instead of Mongoose documents
+      Course.countDocuments(query)
+    ]);
     
     res.status(200).json({
       success: true,

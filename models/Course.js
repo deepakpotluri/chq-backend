@@ -115,7 +115,12 @@ const scheduleSchema = new mongoose.Schema({
   recurringDays: {
     type: [Number], // Array of day numbers (0-6, where 0 is Sunday)
     default: []
-  }
+  },
+    meetingLink: {
+    type: String,
+    default: '',
+    trim: true
+  },
 }, { _id: false }); // Disable automatic _id for subdocuments
 
 // Course Schema
